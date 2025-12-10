@@ -62,6 +62,28 @@ export type ConnectionParamsTranslated = DriverParamsTranslated & { database?: s
 
 export type ConnectionParams = ConnectionParamsBasic | ConnectionParamsTranslated;
 
+/**
+ * Connection parameters for token-based authentication.
+ * Used when connecting via auto-login URL with a pre-authenticated JWT.
+ */
+export interface ConnectionParamsWithToken {
+    /** Pre-authenticated JWT token (skips signin) */
+    token: string;
+    /** Server address (e.g., "http://localhost:8000") */
+    address: string;
+    /** Optional database to select after connecting */
+    database?: string;
+    /** Optional connection name for display */
+    name?: string;
+}
+
+/**
+ * Checks if connection params use token-based authentication.
+ */
+export function isTokenBasedParams(params: ConnectionParams | ConnectionParamsWithToken): params is ConnectionParamsWithToken {
+    return "token" in params && typeof params.token === "string";
+}
+
 const SCHEME = "typedb://";
 export const CONNECTION_URL_PLACEHOLDER = connectionUrlBasic({ username: "username", password: "password", addresses: ["address"] });
 

@@ -13,6 +13,7 @@ import { AsyncPipe } from "@angular/common";
 import { AppData } from "./service/app-data.service";
 import { DriverState } from "./service/driver-state.service";
 import { SnackbarService } from "./service/snackbar.service";
+import { AutoLoginService } from "./service/auto-login.service";
 
 @Component({
     selector: "ts-root", // eslint-disable-line @angular-eslint/component-selector
@@ -34,7 +35,14 @@ export class RootComponent implements OnInit {
     );
     initialised = false;
 
-    constructor(analytics: AnalyticsService, private router: Router, private appData: AppData, private driver: DriverState, private snackbar: SnackbarService) {
+    constructor(
+        analytics: AnalyticsService,
+        private router: Router,
+        private appData: AppData,
+        private driver: DriverState,
+        private snackbar: SnackbarService,
+        private autoLogin: AutoLoginService,
+    ) {
         this.informAnalyticsOnPageView(router, analytics);
     }
 
@@ -46,10 +54,35 @@ export class RootComponent implements OnInit {
     }
 
     ngOnInit() {
+        // Check for auto-login token in URL hash (e.g., from server startup URL)
+        const autoLoginInfo = this.autoLogin.extractAutoLoginInfo();
+        if (autoLoginInfo) {
+            // Clear the hash fragment to avoid exposing the token
+            this.autoLogin.clearHashFragment();
+
+            this.driver.tryConnectWithToken({
+                token: autoLoginInfo.token,
+                address: autoLoginInfo.serverAddress,
+            }).subscribe({
+                next: () => {
+                    this.snackbar.info(`Connected via auto-login`);
+                    this.initialised = true;
+                },
+                error: (err) => {
+                    console.warn("Auto-login failed:", err);
+                    const errorMessage = this.extractErrorMessage(err);
+                    this.snackbar.errorPersistent(`Auto-login failed: ${errorMessage}`);
+                    this.initialised = true;
+                },
+            });
+            return;
+        }
+
+        // Fall back to saved startup connection
         const initialConnectionConfig = this.appData.connections.findStartupConnection();
         if (initialConnectionConfig) {
             this.driver.tryConnect(initialConnectionConfig).subscribe({
-                next: (databases) => {
+                next: () => {
                     this.snackbar.info(`Connected to ${initialConnectionConfig.name}`);
                     this.initialised = true;
                 },
@@ -62,5 +95,36 @@ export class RootComponent implements OnInit {
         } else {
             this.initialised = true;
         }
+    }
+
+    /**
+     * Extracts a user-friendly error message from various error types.
+     */
+    private extractErrorMessage(err: unknown): string {
+        // Handle errors with customError field (from version check)
+        if (err && typeof err === "object" && "customError" in err) {
+            return String((err as { customError: unknown }).customError);
+        }
+
+        // Handle API error responses (has err.message structure)
+        if (err && typeof err === "object" && "err" in err) {
+            const innerErr = (err as { err: unknown }).err;
+            if (innerErr && typeof innerErr === "object" && "message" in innerErr) {
+                return String((innerErr as { message: unknown }).message);
+            }
+        }
+
+        // Handle standard Error objects
+        if (err instanceof Error) {
+            return err.message;
+        }
+
+        // Handle string errors
+        if (typeof err === "string") {
+            return err;
+        }
+
+        // Fallback
+        return "An unexpected error occurred. Please try connecting manually.";
     }
 }

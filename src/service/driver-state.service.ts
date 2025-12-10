@@ -9,7 +9,7 @@ import { BehaviorSubject, catchError, concatMap, distinctUntilChanged, filter, f
 import { fromPromise } from "rxjs/internal/observable/innerFrom";
 import { v4 as uuid } from "uuid";
 import { DriverAction, QueryRunAction, queryRunActionOf, transactionOperationActionOf } from "../concept/action";
-import { ConnectionConfig, databasesSortedByName, DEFAULT_DATABASE_NAME } from "../concept/connection";
+import { ConnectionConfig, ConnectionParamsWithToken, databasesSortedByName, DEFAULT_DATABASE_NAME } from "../concept/connection";
 import { OperationMode, Transaction } from "../concept/transaction";
 import { requireValue } from "../framework/util/observable";
 import { INTERNAL_ERROR } from "../framework/util/strings";
@@ -19,6 +19,10 @@ import {
     TypeDBHttpDriver, User, VersionResponse
 } from "@typedb/driver-http";
 import { FormBuilder } from "@angular/forms";
+import { TypeDBHttpDriverWithToken } from "./driver-with-token";
+
+/** Union type for both regular and token-based drivers */
+type AnyDriver = TypeDBHttpDriver | TypeDBHttpDriverWithToken;
 
 export type DriverStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 
@@ -50,7 +54,9 @@ export class DriverState {
     private _writeLock$ = new BehaviorSubject<Semaphore | null>(null);
     private _stopSignal$ = new Subject<void>();
 
-    private driver?: TypeDBHttpDriver;
+    private driver?: AnyDriver;
+    /** Indicates if the current connection uses a pre-authenticated token (no credential refresh possible) */
+    private isTokenBasedConnection = false;
 
     transactionControls = this.formBuilder.nonNullable.group({
         type: ["read" as TransactionType, []],
@@ -109,7 +115,7 @@ export class DriverState {
         return requireValue(this._transaction$);
     }
 
-    private requireDriver() {
+    private requireDriver(): AnyDriver {
         if (this.driver) return this.driver;
         else throw new Error(INTERNAL_ERROR);
     }
@@ -150,6 +156,7 @@ export class DriverState {
                 }),
                 tap(() => {
                     this._status$.next("connected");
+                    this.isTokenBasedConnection = false;
                     this.appData.connections.push(config);
                     this.refreshUserList().subscribe();
                 }),
@@ -162,10 +169,75 @@ export class DriverState {
         }, lockId);
     }
 
+    /**
+     * Connect to a TypeDB server using a pre-authenticated JWT token.
+     * This is used for auto-login scenarios where the server provides a JWT in the URL.
+     *
+     * Unlike tryConnect(), this method:
+     * - Does not require username/password
+     * - Cannot refresh tokens (the token must remain valid for the session)
+     * - Does not save the connection to localStorage (for security)
+     */
+    tryConnectWithToken(params: ConnectionParamsWithToken): Observable<void> {
+        const lockId = uuid();
+        return this.tryUseWriteLock(() => {
+            const maybeTryDisconnect$ = this._status$.value === "connected" ? this.tryDisconnect(lockId) : of({});
+            return maybeTryDisconnect$.pipe(
+                tap(() => {
+                    this._status$.next("connecting");
+                    this.driver = new TypeDBHttpDriverWithToken({
+                        token: params.token,
+                        address: params.address,
+                    });
+                    this.isTokenBasedConnection = true;
+                }),
+                switchMap(() => this.checkServerVersion()),
+                tap((res) => {
+                    if (isOkResponse(res) && res.ok != null) {
+                        const rawVersion = (res.ok as Partial<VersionResponse>).version;
+                        const parsedVersion = this.parseServerVersionOrNull(rawVersion);
+                        if (parsedVersion?.major === 3 && parsedVersion.minor >= 3) return;
+                        else if (parsedVersion == null) throw { customError: `Unsupported TypeDB server version.\nTypeDB Studio supports TypeDB 3.3.0 and above.` };
+                        else throw { customError: `Unsupported TypeDB server version: ${rawVersion}.\nTypeDB Studio supports TypeDB 3.3.0 and above.` };
+                    } else throw res;
+                }),
+                switchMap(() => this.refreshDatabaseList()),
+                switchMap((res) => {
+                    if (isOkResponse(res)) {
+                        if (!res.ok.databases.length) return this.setupDefaultDatabase(lockId);
+                        if (res.ok.databases.length === 1) this.selectDatabaseWithoutSaving(res.ok.databases[0], lockId);
+                        else if (params.database && this.requireDatabaseList().some(x => x.name === params.database)) {
+                            this.selectDatabaseWithoutSaving({ name: params.database }, lockId);
+                        }
+                        return of(undefined);
+                    } else throw res;
+                }),
+                tap(() => {
+                    this._status$.next("connected");
+                    // Note: We intentionally do NOT save token-based connections to localStorage
+                    // as tokens are ephemeral and should not be persisted
+                    this.refreshUserList().subscribe();
+                }),
+                map(() => undefined),
+                catchError((err) => {
+                    this.connection$.next(null);
+                    this.database$.next(null);
+                    this._databaseList$.next(null);
+                    this._status$.next("disconnected");
+                    this.isTokenBasedConnection = false;
+                    this.driver = undefined;
+                    throw err;
+                }),
+            );
+        }, lockId);
+    }
+
     tryDisconnect(lockId = uuid()) {
         if (this._status$.value === "disconnected") throw new Error(INTERNAL_ERROR);
         if (this._transaction$.value?.hasUncommittedChanges) throw new Error(INTERNAL_ERROR);
-        this.appData.connections.clearStartupConnection();
+        if (!this.isTokenBasedConnection) {
+            this.appData.connections.clearStartupConnection();
+        }
         const maybeCloseTransaction$ = this._transaction$.value ? this.closeTransaction(lockId) : of({});
         return maybeCloseTransaction$.pipe(tap(() => this.tryUseWriteLock(() => {
             this.connection$.next(null);
@@ -173,6 +245,7 @@ export class DriverState {
             this._databaseList$.next(null);
             this.userList$.next(null);
             this._status$.next("disconnected");
+            this.isTokenBasedConnection = false;
         }, lockId)));
     }
 
@@ -201,10 +274,12 @@ export class DriverState {
 
         if (database == null) {
             this.database$.next(null);
-            const currentConnection = this.requireConnection();
-            const connection = currentConnection.withDatabase(null);
-            this.connection$.next(connection);
-            this.appData.connections.push(connection);
+            if (!this.isTokenBasedConnection) {
+                const currentConnection = this.requireConnection();
+                const connection = currentConnection.withDatabase(null);
+                this.connection$.next(connection);
+                this.appData.connections.push(connection);
+            }
             return;
         }
 
@@ -212,10 +287,26 @@ export class DriverState {
         if (!savedDatabase) throw new Error(INTERNAL_ERROR);
         else this.tryUseWriteLock(() => {
             this.database$.next(savedDatabase);
-            const currentConnection = this.requireConnection();
-            const connection = currentConnection.withDatabase(savedDatabase);
-            this.connection$.next(connection);
-            this.appData.connections.push(connection);
+            if (!this.isTokenBasedConnection) {
+                const currentConnection = this.requireConnection();
+                const connection = currentConnection.withDatabase(savedDatabase);
+                this.connection$.next(connection);
+                this.appData.connections.push(connection);
+            }
+        }, lockId);
+    }
+
+    /**
+     * Select a database without saving to localStorage.
+     * Used for token-based connections where we don't persist connection info.
+     */
+    private selectDatabaseWithoutSaving(database: Database, lockId = uuid()) {
+        if (this.database$.value?.name === database.name) return;
+
+        const savedDatabase = this._databaseList$.value?.find(x => x.name === database.name);
+        if (!savedDatabase) throw new Error(INTERNAL_ERROR);
+        else this.tryUseWriteLock(() => {
+            this.database$.next(savedDatabase);
         }, lockId);
     }
 
