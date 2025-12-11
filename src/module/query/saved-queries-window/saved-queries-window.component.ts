@@ -18,6 +18,7 @@ import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatTreeModule } from "@angular/material/tree";
 import { BehaviorSubject, debounceTime, distinctUntilChanged, Subject } from "rxjs";
 import { AppData } from "../../../service/app-data.service";
+import { QueryExportService } from "../../../service/query-export.service";
 import { SnackbarService } from "../../../service/snackbar.service";
 import {
     SavedQuery,
@@ -71,6 +72,7 @@ export class SavedQueriesWindowComponent {
         private appData: AppData,
         private dialog: MatDialog,
         private snackbar: SnackbarService,
+        private queryExportService: QueryExportService,
     ) {
         this.refreshTree();
         
@@ -377,5 +379,10 @@ export class SavedQueriesWindowComponent {
 
     onContextMenu(event: MouseEvent, node: SavedQueryTreeNode): void {
         event.preventDefault();
+    }
+
+    exportQueries(): void {
+        this.queryExportService.downloadAsFile();
+        this.snackbar.success("Queries exported");
     }
 }

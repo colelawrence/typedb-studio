@@ -351,6 +351,42 @@ class SavedQueries {
         this.writeStorage(data);
         return true;
     }
+
+    createFolderWithId(id: string, name: string, parentId: string | null = null): SavedQueryFolder {
+        const data = this.readStorage();
+        const now = new Date().toISOString();
+        const folder: SavedQueryFolder = {
+            id,
+            name,
+            parentId,
+            createdAt: now,
+            updatedAt: now,
+        };
+        data.folders.push(folder);
+        this.writeStorage(data);
+        return folder;
+    }
+
+    createQueryWithId(params: { id: string; name: string; queryText: string; folderId?: string | null; description?: string }): SavedQuery {
+        const data = this.readStorage();
+        const now = new Date().toISOString();
+        const query: SavedQuery = {
+            id: params.id,
+            folderId: params.folderId ?? null,
+            name: params.name,
+            queryText: params.queryText,
+            description: params.description,
+            createdAt: now,
+            updatedAt: now,
+        };
+        data.queries.push(query);
+        this.writeStorage(data);
+        return query;
+    }
+
+    clearAll(): void {
+        this.writeStorage(INITIAL_SAVED_QUERIES_DATA);
+    }
 }
 
 const QUERY_HISTORY = "queryHistory";
