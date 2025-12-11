@@ -19,7 +19,7 @@ import { DriverState } from "./driver-state.service";
 import { SchemaState } from "./schema-state.service";
 import { SnackbarService } from "./snackbar.service";
 import {
-    ApiResponse, Attribute, Concept, ConceptDocument, ConceptRow, isApiErrorResponse, QueryResponse, Value
+    ApiErrorResponse, ApiResponse, Attribute, Concept, ConceptDocument, ConceptRow, isApiErrorResponse, QueryResponse, Value
 } from "@typedb/driver-http";
 import { VibeQueryState } from "./vibe-query-state.service";
 import { MAX_SAMPLE_ROWS, QueryResultSummary, truncateResults } from "../concept/saved-query";
@@ -51,7 +51,17 @@ export class QueryPageState {
     private readonly _originalQueryText$ = new BehaviorSubject<string>("");
 
     readonly currentSavedQueryId$ = this._currentSavedQueryId$.asObservable();
-    
+
+    queryTypeControl = new FormControl("code" as QueryType, {nonNullable: true});
+    queryTypes: QueryType[] = ["code", "chat"];
+    queryEditorControl = new FormControl("", {nonNullable: true});
+
+    readonly isScratchMode$: Observable<boolean> = this._currentSavedQueryId$.pipe(
+        map(id => id === null),
+        distinctUntilChanged(),
+        shareReplay(1),
+    );
+
     readonly isDirty$: Observable<boolean> = combineLatest([
         this._currentSavedQueryId$,
         this._originalQueryText$,
@@ -70,10 +80,6 @@ export class QueryPageState {
         distinctUntilChanged(),
         shareReplay(1),
     );
-
-    queryTypeControl = new FormControl("code" as QueryType, {nonNullable: true});
-    queryTypes: QueryType[] = ["code", "chat"];
-    queryEditorControl = new FormControl("", {nonNullable: true});
     outputTypeControl = new FormControl("log" as OutputType, { nonNullable: true });
     outputTypes: OutputType[] = ["log", "table", "graph", "raw"];
     readonly logOutput = new LogOutputState();
@@ -134,8 +140,8 @@ export class QueryPageState {
         this.driver.checkHealth().subscribe({
             next: () => {
                 let msg = ``;
-                if (isApiErrorResponse(err)) {
-                    msg = err.err.message;
+                if (err && typeof err === "object" && "err" in err && typeof (err as ApiErrorResponse).err?.message === "string") {
+                    msg = (err as ApiErrorResponse).err.message;
                 } else {
                     msg = (err as Error)?.message ?? (err as object)?.toString() ?? `Unknown error`;
                 }
@@ -283,6 +289,20 @@ export class QueryPageState {
     clearCurrentSavedQuery(): void {
         this._currentSavedQueryId$.next(null);
         this._originalQueryText$.next("");
+    }
+
+    clearToScratch(): void {
+        this._currentSavedQueryId$.next(null);
+        this._originalQueryText$.next("");
+        this.queryEditorControl.patchValue("");
+    }
+
+    hasUnsavedChanges(): boolean {
+        const currentId = this._currentSavedQueryId$.value;
+        if (!currentId) {
+            return this.queryEditorControl.value.trim().length > 0;
+        }
+        return this.queryEditorControl.value !== this._originalQueryText$.value;
     }
 
     getCurrentSavedQueryId(): string | null {

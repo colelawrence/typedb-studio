@@ -42,6 +42,7 @@ import { MatMenuModule } from "@angular/material/menu";
 import { QuerySidebarComponent } from "./sidebar/query-sidebar.component";
 import { SavedQuery } from "../../concept/saved-query";
 import { SavedQueryDialogComponent, SavedQueryDialogData, SavedQueryDialogResult } from "./saved-queries-window/saved-query-dialog.component";
+import { ConfirmationModalComponent, ConfirmationModalData } from "../../framework/modal";
 
 @Component({
     selector: "ts-query-page",
@@ -226,6 +227,27 @@ export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
                 this.querySidebar?.refreshSavedQueries();
             }
         });
+    }
+
+    newScratchQuery(): void {
+        if (this.state.hasUnsavedChanges()) {
+            const dialogRef = this.dialog.open(ConfirmationModalComponent, {
+                width: "400px",
+                data: {
+                    title: "Discard changes?",
+                    body: "You have unsaved changes. Creating a new scratch query will discard them.",
+                    confirmText: "Discard",
+                    confirmButtonStyle: "primary-outline red stroke",
+                } as ConfirmationModalData,
+            });
+
+            dialogRef.componentInstance.confirmed.subscribe(() => {
+                dialogRef.close();
+                this.state.clearToScratch();
+            });
+        } else {
+            this.state.clearToScratch();
+        }
     }
 
     readonly isQueryRun = isQueryRun;
