@@ -1,0 +1,133 @@
+<div class="card-header-wrapper">
+  <div class="card-header">
+    <h5>Saved Queries</h5>
+    <div class="flex-spacer"></div>
+    <div class="card-header-actions">
+      <button matIconButton matTooltip="New folder" matTooltipPosition="below" matTooltipShowDelay="500" (click)="createFolder()">
+        <i class="fa-light fa-folder-plus"></i>
+      </button>
+      <button matIconButton matTooltip="New query" matTooltipPosition="below" matTooltipShowDelay="500" (click)="createQuery()">
+        <i class="fa-light fa-file-plus"></i>
+      </button>
+      <button matIconButton matTooltip="Refresh" matTooltipPosition="below" matTooltipShowDelay="500" (click)="refreshTree()">
+        <i class="fa-light fa-refresh"></i>
+      </button>
+    </div>
+  </div>
+  <div class="search-container">
+    <mat-form-field class="search-field" appearance="outline" subscriptSizing="dynamic">
+      <mat-label>Search</mat-label>
+      <input matInput [(ngModel)]="searchText" (ngModelChange)="onSearchChange($event)" placeholder="Search queries...">
+      @if (searchText) {
+        <button matSuffix matIconButton (click)="clearSearch()">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      }
+    </mat-form-field>
+  </div>
+</div>
+<div class="saved-queries-container" detectScroll>
+  <div class="gutter"></div>
+  <div class="tree-content">
+    @for (node of filteredTreeData$ | async; track trackByFn($index, node)) {
+      <ng-container *ngTemplateOutlet="treeNodeTemplate; context: { $implicit: node }"></ng-container>
+    }
+  </div>
+  <div class="gutter"></div>
+</div>
+
+<ng-template #treeNodeTemplate let-node>
+  <div class="tree-node" [style.padding-left.px]="node.level * 16 + 8"
+       [class.folder]="node.type === 'folder' || node.type === 'unsorted'"
+       [class.query]="node.type === 'query'"
+       [matMenuTriggerFor]="nodeContextMenu"
+       #menuTrigger="matMenuTrigger"
+       (contextmenu)="onContextMenu($event, node); menuTrigger.openMenu()"
+       (click)="node.type === 'query' ? selectQuery(node) : toggleNode(node)">
+    @if (node.type === 'folder' || node.type === 'unsorted') {
+      <button matIconButton class="expand-button" (click)="toggleNode(node); $event.stopPropagation()">
+        <mat-icon class="mat-icon-rtl-mirror">
+          {{ isExpanded(node) ? 'expand_more' : 'chevron_right' }}
+        </mat-icon>
+      </button>
+    } @else {
+      <span class="expand-placeholder"></span>
+    }
+    <i [class]="nodeIcon(node)"></i>
+    <span class="node-name">{{ node.name }}</span>
+    @if (node.type === 'query' && node.data?.lastRunAt) {
+      <span class="last-run-indicator" [matTooltip]="'Last run: ' + (node.data.lastRunAt | date:'short')">
+        @if (node.data.lastResultSummary?.status === 'success') {
+          <i class="fa-light fa-check status-success"></i>
+        } @else if (node.data.lastResultSummary?.status === 'error') {
+          <i class="fa-light fa-xmark status-error"></i>
+        }
+      </span>
+    }
+
+    <mat-menu #nodeContextMenu="matMenu">
+      @if (node.type === 'unsorted') {
+        <button mat-menu-item (click)="createQuery(null)">
+          <i class="fa-light fa-file-plus"></i>
+          <span>New Query</span>
+        </button>
+        <button mat-menu-item (click)="createFolder(null)">
+          <i class="fa-light fa-folder-plus"></i>
+          <span>New Folder</span>
+        </button>
+      } @else if (node.type === 'folder') {
+        <button mat-menu-item (click)="createQuery(node.id)">
+          <i class="fa-light fa-file-plus"></i>
+          <span>New Query</span>
+        </button>
+        <button mat-menu-item (click)="createFolder(node.id)">
+          <i class="fa-light fa-folder-plus"></i>
+          <span>New Subfolder</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="renameFolder(node.data)">
+          <i class="fa-light fa-pen"></i>
+          <span>Rename</span>
+        </button>
+        <button mat-menu-item (click)="moveItem(node)">
+          <i class="fa-light fa-arrow-right-arrow-left"></i>
+          <span>Move to...</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item class="danger" (click)="deleteFolder(node.data)">
+          <i class="fa-light fa-trash"></i>
+          <span>Delete</span>
+        </button>
+      } @else if (node.type === 'query') {
+        <button mat-menu-item (click)="selectQuery(node)">
+          <i class="fa-light fa-arrow-right"></i>
+          <span>Open in Editor</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="renameQuery(node.data)">
+          <i class="fa-light fa-pen"></i>
+          <span>Rename</span>
+        </button>
+        <button mat-menu-item (click)="moveItem(node)">
+          <i class="fa-light fa-arrow-right-arrow-left"></i>
+          <span>Move to...</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item class="danger" (click)="deleteQuery(node.data)">
+          <i class="fa-light fa-trash"></i>
+          <span>Delete</span>
+        </button>
+      }
+    </mat-menu>
+  </div>
+  @if ((node.type === 'folder' || node.type === 'unsorted') && isExpanded(node)) {
+    @for (child of node.children; track trackByFn($index, child)) {
+      <ng-container *ngTemplateOutlet="treeNodeTemplate; context: { $implicit: child }"></ng-container>
+    }
+    @if (!node.children?.length) {
+      <div class="tree-node empty-folder" [style.padding-left.px]="(node.level + 1) * 16 + 8">
+        <span class="empty-text">Empty</span>
+      </div>
+    }
+  }
+</ng-template>
