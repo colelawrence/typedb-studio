@@ -39,7 +39,9 @@ import { keymap } from "@codemirror/view";
 import { startCompletion } from "@codemirror/autocomplete";
 import { indentWithTab } from "@codemirror/commands";
 import { MatMenuModule } from "@angular/material/menu";
-import { SchemaToolWindowComponent } from "../schema/tool-window/schema-tool-window.component";
+import { QuerySidebarComponent } from "./sidebar/query-sidebar.component";
+import { SavedQuery } from "../../concept/saved-query";
+import { SavedQueryDialogComponent, SavedQueryDialogData, SavedQueryDialogResult } from "./saved-queries-window/saved-query-dialog.component";
 
 @Component({
     selector: "ts-query-page",
@@ -49,13 +51,14 @@ import { SchemaToolWindowComponent } from "../schema/tool-window/schema-tool-win
         RouterLink, AsyncPipe, PageScaffoldComponent, MatDividerModule, MatFormFieldModule, MatIconModule,
         MatInputModule, FormsModule, ReactiveFormsModule, MatButtonToggleModule, ResizableDirective,
         DatePipe, SpinnerComponent, MatTableModule, MatSortModule, MatTooltipModule, MatButtonModule, RichTooltipDirective,
-        MatMenuModule, SchemaToolWindowComponent, VibeQueryComponent, CodeEditorComponent,
+        MatMenuModule, VibeQueryComponent, CodeEditorComponent, QuerySidebarComponent,
     ]
 })
 export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
 
     @ViewChild(CodeEditor) codeEditor!: CodeEditor;
     @ViewChild("articleRef") articleRef!: ElementRef<HTMLElement>;
+    @ViewChild(QuerySidebarComponent) querySidebar!: QuerySidebarComponent;
     @ViewChildren("graphViewRef") graphViewRef!: QueryList<ElementRef<HTMLElement>>;
     @ViewChildren(ResizableDirective) resizables!: QueryList<ResizableDirective>;
 
@@ -187,6 +190,42 @@ export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
         setTimeout(() => {
             this.sentLogToAI = false;
         }, 3000);
+    }
+
+    loadSavedQuery(query: SavedQuery): void {
+        this.state.loadSavedQuery(query.id, query.queryText);
+    }
+
+    saveQueryChanges(): void {
+        if (this.state.saveCurrentQueryChanges()) {
+            this.snackbar.success("Query saved");
+            this.querySidebar?.refreshSavedQueries();
+        }
+    }
+
+    saveCurrentQuery(): void {
+        const queryText = this.state.queryEditorControl.value;
+        if (!queryText.trim()) {
+            this.snackbar.warn("Cannot save an empty query");
+            return;
+        }
+
+        const dialogRef = this.dialog.open(SavedQueryDialogComponent, {
+            width: "500px",
+            data: { mode: "create", queryText } as SavedQueryDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: SavedQueryDialogResult | undefined) => {
+            if (result?.action === "save") {
+                this.appData.savedQueries.createQuery({
+                    name: result.name,
+                    queryText,
+                    description: result.description,
+                });
+                this.snackbar.success(`Query "${result.name}" saved`);
+                this.querySidebar?.refreshSavedQueries();
+            }
+        });
     }
 
     readonly isQueryRun = isQueryRun;

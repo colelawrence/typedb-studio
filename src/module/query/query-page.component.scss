@@ -134,6 +134,19 @@ i.fa-xmark {
     h5, mat-button-toggle-group, button {
         z-index: 10;
     }
+
+    h5 {
+        .saved-query-indicator {
+            font-weight: normal;
+            font-size: 12px;
+            color: colors.$grey;
+        }
+
+        .dirty-indicator {
+            color: colors.$secondary-deep-green;
+            font-weight: bold;
+        }
+    }
 }
 
 mat-button-toggle i {
