@@ -1,0 +1,19 @@
+<div class="sidebar-tabs">
+  <mat-button-toggle-group [(ngModel)]="activeTab" class="sidebar-tab-toggle">
+    <mat-button-toggle value="schema">
+      <i class="fa-light fa-diagram-project"></i>
+      <span>Schema</span>
+    </mat-button-toggle>
+    <mat-button-toggle value="queries">
+      <i class="fa-light fa-bookmark"></i>
+      <span>Queries</span>
+    </mat-button-toggle>
+  </mat-button-toggle-group>
+</div>
+<div class="sidebar-content">
+  @if (activeTab === 'schema') {
+    <ts-schema-tool-window [title]="''"/>
+  } @else {
+    <ts-saved-queries-window (querySelected)="onQuerySelected($event)"/>
+  }
+</div>

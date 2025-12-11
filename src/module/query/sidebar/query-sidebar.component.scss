@@ -1,0 +1,45 @@
+/*!/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+@use "colors";
+@use "shapes";
+
+:host {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.sidebar-tabs {
+    padding: 8px;
+    flex-shrink: 0;
+}
+
+.sidebar-tab-toggle {
+    width: 100%;
+    display: flex;
+
+    mat-button-toggle {
+        flex: 1;
+        
+        i {
+            margin-right: 4px;
+        }
+    }
+}
+
+.sidebar-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    ts-schema-tool-window,
+    ts-saved-queries-window {
+        flex: 1;
+        overflow: hidden;
+    }
+}
