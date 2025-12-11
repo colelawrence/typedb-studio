@@ -1,0 +1,76 @@
+<div class="history-bar-compact" (click)="toggle()">
+  @if (latestEntry) {
+    <div class="latest-entry">
+      <span class="entry-time">{{ latestEntry.startedAtTimestamp | date:'shortTime' }}</span>
+      <span class="entry-action">
+        @if (isQueryRun(latestEntry)) {
+          ran query
+        } @else if (isTransactionOperation(latestEntry)) {
+          {{ transactionOperationString(latestEntry) }}
+        }
+      </span>
+      <span class="entry-status">
+        @if (latestEntry.status === 'pending') {
+          <tp-spinner [size]="12"/>
+        } @else {
+          <span class="duration">{{ actionDurationString(latestEntry) }}</span>
+          @if (latestEntry.status === 'success') {
+            <i class="fa-light fa-check status-success"></i>
+          } @else {
+            <i class="fa-light fa-xmark status-error"
+               richTooltip [richTooltipContent]="historyEntryErrorTooltip(latestEntry)"></i>
+          }
+        }
+      </span>
+    </div>
+  } @else {
+    <span class="no-history">No history yet</span>
+  }
+  <button mat-icon-button class="expand-btn" [matTooltip]="expanded ? 'Collapse history' : 'Expand history'">
+    <mat-icon>{{ expanded ? 'expand_more' : 'expand_less' }}</mat-icon>
+  </button>
+</div>
+
+@if (expanded) {
+  <div class="history-bar-expanded">
+    <div class="history-header">
+      <h6>History</h6>
+    </div>
+    <div class="history-list">
+      @for (entry of state.history.entries; track entry) {
+        <div class="history-entry" [class.pending]="entry.status === 'pending'" [class.error]="entry.status === 'error'">
+          <div class="entry-header">
+            <span class="entry-time">{{ entry.startedAtTimestamp | date:'shortTime' }}</span>
+            <span class="entry-action">
+              @if (isQueryRun(entry)) {
+                ran query
+              } @else if (isTransactionOperation(entry)) {
+                {{ transactionOperationString(entry) }}
+              }
+            </span>
+            <span class="flex-spacer"></span>
+            <span class="entry-status">
+              @if (entry.status === 'pending') {
+                <tp-spinner [size]="12"/>
+              } @else {
+                <span class="duration">{{ actionDurationString(entry) }}</span>
+                @if (entry.status === 'success') {
+                  <i class="fa-light fa-check status-success"></i>
+                } @else {
+                  <i class="fa-light fa-xmark status-error"
+                     richTooltip [richTooltipContent]="historyEntryErrorTooltip(entry)"></i>
+                }
+              }
+            </span>
+          </div>
+          @if (isQueryRun(entry)) {
+            <div class="entry-query">{{ queryPreview(entry.query) }}</div>
+          }
+        </div>
+      }
+      @if (state.history.entries.length === 0) {
+        <div class="no-history-message">No queries executed yet</div>
+      }
+    </div>
+  </div>
+}

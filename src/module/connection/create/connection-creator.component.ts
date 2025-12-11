@@ -13,7 +13,7 @@ import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { DriverParams, isApiErrorResponse, isBasicParams } from "@typedb/driver-http";
-import { CONNECTION_URL_PLACEHOLDER, ConnectionConfig, connectionUrl, parseConnectionUrlOrNull } from "../../../concept/connection";
+import { ConnectionConfig, connectionUrl, parseConnectionUrlOrNull } from "../../../concept/connection";
 import { RichTooltipDirective } from "../../../framework/tooltip/rich-tooltip.directive";
 import { INTERNAL_ERROR } from "../../../framework/util/strings";
 import { ADDRESS, NAME, USERNAME } from "../../../framework/util/url-params";
@@ -68,7 +68,6 @@ export class ConnectionCreatorComponent {
         { value: false, viewValue: `Use connection URL` },
     ];
     connectionUrlRevealed = false;
-    connectionUrlPlaceholder = CONNECTION_URL_PLACEHOLDER;
     passwordRevealed = false;
 
     readonly form = this.formBuilder.group({
@@ -194,6 +193,12 @@ export class ConnectionCreatorComponent {
         if (this.savedConnections.some(x => x.name === control.value)) {
             return { errorText: `A connection named '${control.value}' already exists` };
         } else return null;
+    }
+
+    fillExampleUrl() {
+        const exampleUrl = "typedb://admin:password@http://localhost:8000";
+        this.form.patchValue({ url: exampleUrl });
+        this.form.controls.url.markAsDirty();
     }
 
     onAdvancedFieldPaste(event: ClipboardEvent) {

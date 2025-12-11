@@ -16,7 +16,7 @@ import { detectOS } from "../framework/util/os";
 import { INTERNAL_ERROR } from "../framework/util/strings";
 import { AppData } from "./app-data.service";
 import { DriverState } from "./driver-state.service";
-import { SchemaState } from "./schema-state.service";
+import { SchemaEntity, SchemaRelation, SchemaState } from "./schema-state.service";
 import { SnackbarService } from "./snackbar.service";
 import {
     ApiErrorResponse, ApiResponse, Attribute, Concept, ConceptDocument, ConceptRow, isApiErrorResponse, QueryResponse, Value
@@ -327,6 +327,39 @@ export class QueryPageState {
 
     clearChat() {
         this.vibeQuery.messages$.next([]);
+    }
+
+    /**
+     * Generates a fetch query for a given type and loads it into the editor.
+     * @param concept The entity or relation type with its owned attributes
+     * @param limit Optional limit for the query (default: 20)
+     */
+    loadQueryForType(concept: SchemaEntity | SchemaRelation, limit = 20): void {
+        const query = this.generateFetchQuery(concept, limit);
+        this.clearCurrentSavedQuery();
+        this.queryTypeControl.patchValue("code");
+        this.queryEditorControl.patchValue(query);
+    }
+
+    /**
+     * Generates a TypeQL query for a given type.
+     * Uses fetch with attributes if available, otherwise a simple match query.
+     */
+    private generateFetchQuery(concept: SchemaEntity | SchemaRelation, limit: number): string {
+        const typeLabel = concept.label;
+        const varName = typeLabel[0].toLowerCase();
+        const attributeLabels = concept.ownedAttributes.map(a => a.label);
+
+        const matchClause = concept.kind === 'relationType'
+            ? `match $${varName} isa ${typeLabel} ($player);`
+            : `match $${varName} isa ${typeLabel};`;
+
+        if (attributeLabels.length > 0) {
+            const fetchEntries = attributeLabels.map(label => `"${label}": $${varName}.${label}`).join(",\n    ");
+            return `${matchClause}\nlimit ${limit};\nfetch {\n    ${fetchEntries}\n};`;
+        } else {
+            return `${matchClause}\nlimit ${limit};`;
+        }
     }
 
     private initialiseOutput(query: string) {

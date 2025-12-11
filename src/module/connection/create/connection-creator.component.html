@@ -52,11 +52,11 @@
       <div class="form-input-block">
         <div class="form-input-row-description">
           <p>Enter connection URL</p>
-          <p class="form-input-row-hint">Format: <code>typedb://username:password&#64;address</code><br/>Example: <code>typedb://admin:password&#64;http://localhost:8000</code></p>
+          <p class="form-input-row-hint">Format: <code>typedb://username:password&#64;address</code><br/>Example: <code class="clickable-example" (click)="fillExampleUrl()">typedb://admin:password&#64;http://localhost:8000</code></p>
         </div>
         <div class="help-input-row">
           <mat-form-field>
-            <input matInput [formControl]="form.controls.url" [type]="connectionUrlRevealed ? 'text' : 'password'" [placeholder]="connectionUrlPlaceholder">
+            <input matInput [formControl]="form.controls.url" [type]="connectionUrlRevealed ? 'text' : 'password'">
             <div class="tp-password-input-suffix" matSuffix>
               <button type="button" tabindex="-1" mat-icon-button (click)="connectionUrlRevealed = !connectionUrlRevealed" aria-label="Hide connection URL" aria-pressed="hide">
                 <i [class]="connectionUrlRevealed ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'"></i>

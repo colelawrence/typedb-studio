@@ -4,22 +4,21 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, EventEmitter, HostBinding, Output, ViewChild } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { MatButtonToggleModule } from "@angular/material/button-toggle";
+import { Component, EventEmitter, HostBinding, inject, Output, ViewChild } from "@angular/core";
+import { MatIconModule } from "@angular/material/icon";
+import { MatButtonModule } from "@angular/material/button";
 import { SchemaToolWindowComponent } from "../../schema/tool-window/schema-tool-window.component";
 import { SavedQueriesWindowComponent } from "../saved-queries-window/saved-queries-window.component";
 import { SavedQuery } from "../../../concept/saved-query";
-
-export type SidebarTab = "schema" | "queries";
+import { AppData } from "../../../service/app-data.service";
 
 @Component({
     selector: "ts-query-sidebar",
     templateUrl: "query-sidebar.component.html",
     styleUrls: ["query-sidebar.component.scss"],
     imports: [
-        FormsModule,
-        MatButtonToggleModule,
+        MatIconModule,
+        MatButtonModule,
         SchemaToolWindowComponent,
         SavedQueriesWindowComponent,
     ],
@@ -29,7 +28,33 @@ export class QuerySidebarComponent {
     @Output() querySelected = new EventEmitter<SavedQuery>();
     @ViewChild(SavedQueriesWindowComponent) savedQueriesWindow?: SavedQueriesWindowComponent;
 
-    activeTab: SidebarTab = "schema";
+    private appData = inject(AppData);
+
+    schemaCollapsed: boolean;
+    queriesCollapsed: boolean;
+
+    constructor() {
+        const state = this.appData.viewState.querySidebarState();
+        this.schemaCollapsed = state.schemaCollapsed;
+        this.queriesCollapsed = state.queriesCollapsed;
+    }
+
+    toggleSchema(): void {
+        this.schemaCollapsed = !this.schemaCollapsed;
+        this.persistState();
+    }
+
+    toggleQueries(): void {
+        this.queriesCollapsed = !this.queriesCollapsed;
+        this.persistState();
+    }
+
+    private persistState(): void {
+        this.appData.viewState.setQuerySidebarState({
+            schemaCollapsed: this.schemaCollapsed,
+            queriesCollapsed: this.queriesCollapsed,
+        });
+    }
 
     onQuerySelected(query: SavedQuery): void {
         this.querySelected.emit(query);

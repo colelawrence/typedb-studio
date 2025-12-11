@@ -5,7 +5,7 @@
  */
 
 import { CodeEditor } from "@acrodata/code-editor";
-import { AsyncPipe, DatePipe } from "@angular/common";
+import { AsyncPipe } from "@angular/common";
 import { AfterViewInit, Component, ElementRef, inject, OnDestroy, OnInit, QueryList, ViewChild, ViewChildren } from "@angular/core";
 import { FormsModule, ReactiveFormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
@@ -24,10 +24,7 @@ import { ResizableDirective } from "@hhangular/resizable";
 import { filter, map, startWith } from "rxjs";
 import { CodeEditorComponent } from "../../framework/code-editor/code-editor.component";
 import { otherExampleLinter, TypeQL, typeqlAutocompleteExtension } from "../../framework/codemirror-lang-typeql";
-import { DriverAction, TransactionOperationAction, isQueryRun, isTransactionOperation } from "../../concept/action";
 import { basicDark } from "../../framework/code-editor/theme";
-import { SpinnerComponent } from "../../framework/spinner/spinner.component";
-import { RichTooltipDirective } from "../../framework/tooltip/rich-tooltip.directive";
 import { AppData } from "../../service/app-data.service";
 import { DriverState } from "../../service/driver-state.service";
 import { QueryPageState, QueryType } from "../../service/query-page-state.service";
@@ -43,6 +40,7 @@ import { QuerySidebarComponent } from "./sidebar/query-sidebar.component";
 import { SavedQuery } from "../../concept/saved-query";
 import { SavedQueryDialogComponent, SavedQueryDialogData, SavedQueryDialogResult } from "./saved-queries-window/saved-query-dialog.component";
 import { ConfirmationModalComponent, ConfirmationModalData } from "../../framework/modal";
+import { HistoryBarComponent } from "./history-bar/history-bar.component";
 
 @Component({
     selector: "ts-query-page",
@@ -51,8 +49,8 @@ import { ConfirmationModalComponent, ConfirmationModalData } from "../../framewo
     imports: [
         RouterLink, AsyncPipe, PageScaffoldComponent, MatDividerModule, MatFormFieldModule, MatIconModule,
         MatInputModule, FormsModule, ReactiveFormsModule, MatButtonToggleModule, ResizableDirective,
-        DatePipe, SpinnerComponent, MatTableModule, MatSortModule, MatTooltipModule, MatButtonModule, RichTooltipDirective,
-        MatMenuModule, VibeQueryComponent, CodeEditorComponent, QuerySidebarComponent,
+        MatTableModule, MatSortModule, MatTooltipModule, MatButtonModule,
+        MatMenuModule, VibeQueryComponent, CodeEditorComponent, QuerySidebarComponent, HistoryBarComponent,
     ]
 })
 export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
@@ -118,42 +116,6 @@ export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
 
     runQuery() {
         this.state.runQuery(this.state.queryEditorControl.value);
-    }
-
-    queryHistoryPreview(query: string) {
-        return query.split(`\n`).slice(0, 2).join(`\n`);
-    }
-
-    // TODO: any angular dev with a shred of self-respect would make this be a pipe
-    actionDurationString(action: DriverAction) {
-        if (action.completedAtTimestamp == undefined) return ``;
-        return `${action.completedAtTimestamp - action.startedAtTimestamp}ms`;
-    }
-
-    transactionOperationString(action: TransactionOperationAction) {
-        switch (action.operation) {
-            case "open": return "opened transaction";
-            case "commit": return "committed transaction";
-            case "close": return "closed transaction";
-        }
-    }
-
-    historyEntryErrorTooltip(entry: DriverAction) {
-        if (!entry.result) return ``;
-        else if ("err" in entry.result && !!entry.result.err?.message) return entry.result.err.message;
-        else if ("message" in entry.result) return entry.result.message as string;
-        else return entry.result.toString();
-    }
-
-    async copyHistoryEntryErrorTooltip(entry: DriverAction) {
-        const tooltip = this.historyEntryErrorTooltip(entry);
-        if (!tooltip) return;
-        try {
-            await navigator.clipboard.writeText(tooltip);
-            this.snackbar.success("Error text copied", { duration: 2500 });
-        } catch (e) {
-            console.warn(e);
-        }
     }
 
     queryTypeIconClass(queryType: QueryType): string {
@@ -250,8 +212,6 @@ export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
-    readonly isQueryRun = isQueryRun;
-    readonly isTransactionOperation = isTransactionOperation;
     readonly JSON = JSON;
     readonly TypeQL = TypeQL;
     readonly linter = otherExampleLinter;

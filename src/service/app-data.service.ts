@@ -5,7 +5,9 @@
  */
 
 import { Injectable } from "@angular/core";
+import { BehaviorSubject } from "rxjs";
 import { ConnectionConfig, ConnectionJson } from "../concept/connection";
+import { ExportedQueriesFile, ExportedQuery, ExportedFolder } from "../concept/query-export";
 import {
     generateId,
     INITIAL_QUERY_HISTORY_DATA,
@@ -22,7 +24,7 @@ import {
     UNSORTED_FOLDER_ID,
     URL_IMPORTS_FOLDER_ID,
 } from "../concept/saved-query";
-import { SchemaToolWindowState, SidebarState, sidebarStates, Tool, tools } from "../concept/view-state";
+import { QuerySidebarState, SchemaToolWindowState, SidebarState, sidebarStates, Tool, tools } from "../concept/view-state";
 import { StorageService, StorageWriteResult } from "./storage.service";
 
 function isObjectWithFields<FIELD extends string>(obj: unknown, fields: FIELD[]): obj is { [K in typeof fields[number]]: unknown } {
@@ -35,6 +37,7 @@ interface ViewStateData {
     sidebarState: SidebarState;
     lastUsedTool: Tool;
     schemaToolWindowState: SchemaToolWindowState;
+    querySidebarState: QuerySidebarState;
 }
 
 const INITIAL_VIEW_STATE_DATA: ViewStateData = {
@@ -53,6 +56,10 @@ const INITIAL_VIEW_STATE_DATA: ViewStateData = {
             relations: false,
             attributes: false,
         },
+    },
+    querySidebarState: {
+        schemaCollapsed: false,
+        queriesCollapsed: false,
     },
 };
 
@@ -116,6 +123,17 @@ class ViewState {
     setSchemaToolWindowState(value: SchemaToolWindowState) {
         const viewState = this.readStorage();
         viewState.schemaToolWindowState = value;
+        this.writeStorage(viewState);
+    }
+
+    querySidebarState(): QuerySidebarState {
+        const viewState = this.readStorage();
+        return viewState.querySidebarState || INITIAL_VIEW_STATE_DATA.querySidebarState;
+    }
+
+    setQuerySidebarState(value: QuerySidebarState) {
+        const viewState = this.readStorage();
+        viewState.querySidebarState = value;
         this.writeStorage(viewState);
     }
 }
@@ -550,6 +568,14 @@ class QueryHistory {
     }
 }
 
+export interface SharedQueriesState {
+    data: ExportedQueriesFile;
+    sourceUrl: string;
+    displayName: string;
+    loadedAt: string;
+    selectedQueryId?: string;
+}
+
 @Injectable({
     providedIn: "root",
 })
@@ -563,6 +589,242 @@ export class AppData {
     readonly savedQueries = new SavedQueries(this.storage);
     readonly queryHistory = new QueryHistory(this.storage);
 
+    // Temporary shared queries state (not persisted to storage)
+    private _sharedQueries = new BehaviorSubject<SharedQueriesState | null>(null);
+    readonly sharedQueries$ = this._sharedQueries.asObservable();
+
     constructor(private storage: StorageService) {
+    }
+
+    /**
+     * Load shared queries from a URL (temporary, not persisted)
+     */
+    loadSharedQueries(data: ExportedQueriesFile, sourceUrl: string): void {
+        const displayName = data.importName ||
+                           this.extractNameFromUrl(sourceUrl) ||
+                           'Shared Queries';
+
+        this._sharedQueries.next({
+            data,
+            sourceUrl,
+            displayName,
+            loadedAt: new Date().toISOString(),
+        });
+    }
+
+    /**
+     * Get current shared queries state
+     */
+    getSharedQueries(): SharedQueriesState | null {
+        return this._sharedQueries.value;
+    }
+
+    /**
+     * Dismiss/clear shared queries and remove hash from URL
+     */
+    dismissSharedQueries(): void {
+        this._sharedQueries.next(null);
+
+        // Remove hash from URL
+        if (window.location.hash.startsWith('#share=')) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+    }
+
+    /**
+     * Mark a query as selected in the shared section
+     */
+    markSharedQueryAsSelected(queryId: string): void {
+        const current = this._sharedQueries.value;
+        if (current) {
+            this._sharedQueries.next({
+                ...current,
+                selectedQueryId: queryId,
+            });
+        }
+    }
+
+    /**
+     * Save a shared query to user's saved queries
+     */
+    saveSharedQueryToMyQueries(queryId: string, targetFolderId?: string | null): SavedQuery | null {
+        const shared = this._sharedQueries.value;
+        if (!shared) return null;
+
+        const query = shared.data.queries.find(q => q.id === queryId);
+        if (!query) return null;
+
+        return this.savedQueries.createQuery({
+            name: query.name,
+            queryText: query.queryText,
+            description: query.description,
+            folderId: targetFolderId ?? null,
+        });
+    }
+
+    /**
+     * Save all shared queries to user's saved queries
+     */
+    saveAllSharedQueries(targetFolderId?: string | null): { queriesSaved: number; foldersSaved: number } {
+        const shared = this._sharedQueries.value;
+        if (!shared) return { queriesSaved: 0, foldersSaved: 0 };
+
+        let queriesSaved = 0;
+        let foldersSaved = 0;
+
+        // Create a map to track old folder IDs to new folder IDs
+        const folderIdMap = new Map<string, string>();
+
+        // Save folders first (maintaining hierarchy)
+        const sortedFolders = this.topologicalSortFolders(shared.data.folders);
+        for (const folder of sortedFolders) {
+            const parentId = folder.parentId
+                ? folderIdMap.get(folder.parentId) ?? null
+                : null;
+
+            const newFolder = this.savedQueries.createFolder(folder.name, parentId);
+            folderIdMap.set(folder.id, newFolder.id);
+            foldersSaved++;
+        }
+
+        // Save queries
+        for (const query of shared.data.queries) {
+            let folderId: string | null = null;
+
+            if (query.folderId) {
+                folderId = folderIdMap.get(query.folderId) ?? null;
+            }
+
+            if (!query.folderId && targetFolderId) {
+                folderId = targetFolderId;
+            }
+
+            this.savedQueries.createQuery({
+                name: query.name,
+                queryText: query.queryText,
+                description: query.description,
+                folderId,
+            });
+            queriesSaved++;
+        }
+
+        return { queriesSaved, foldersSaved };
+    }
+
+    /**
+     * Save a shared folder and all its contents to user's saved queries
+     */
+    saveSharedFolderToMyQueries(folderId: string, targetFolderId?: string | null): { queriesSaved: number; foldersSaved: number } {
+        const shared = this._sharedQueries.value;
+        if (!shared) return { queriesSaved: 0, foldersSaved: 0 };
+
+        const folderIds = this.collectFolderAndDescendantIds(folderId, shared.data.folders);
+        const folders = shared.data.folders.filter(f => folderIds.has(f.id));
+        const queries = shared.data.queries.filter(q => q.folderId && folderIds.has(q.folderId));
+
+        let queriesSaved = 0;
+        let foldersSaved = 0;
+
+        // Map old IDs to new IDs
+        const folderIdMap = new Map<string, string>();
+
+        // Save folders
+        const sortedFolders = this.topologicalSortFolders(folders);
+        for (const folder of sortedFolders) {
+            let parentId: string | null = null;
+
+            if (folder.id === folderId) {
+                // Root folder of the selection - use target folder as parent
+                parentId = targetFolderId ?? null;
+            } else if (folder.parentId) {
+                // Child folder - map to new parent ID
+                parentId = folderIdMap.get(folder.parentId) ?? null;
+            }
+
+            const newFolder = this.savedQueries.createFolder(folder.name, parentId);
+            folderIdMap.set(folder.id, newFolder.id);
+            foldersSaved++;
+        }
+
+        // Save queries
+        for (const query of queries) {
+            const newFolderId = query.folderId ? folderIdMap.get(query.folderId) ?? null : null;
+
+            this.savedQueries.createQuery({
+                name: query.name,
+                queryText: query.queryText,
+                description: query.description,
+                folderId: newFolderId,
+            });
+            queriesSaved++;
+        }
+
+        return { queriesSaved, foldersSaved };
+    }
+
+    /**
+     * Extract a friendly name from URL for display
+     */
+    private extractNameFromUrl(url: string): string | null {
+        try {
+            const parsed = new URL(url);
+            const pathParts = parsed.pathname.split('/').filter(Boolean);
+            const lastPart = pathParts[pathParts.length - 1] || '';
+
+            if (lastPart && lastPart !== 'query') {
+                return lastPart
+                    .replace(/[-_]/g, ' ')
+                    .replace(/\b\w/g, c => c.toUpperCase());
+            }
+
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Topological sort folders (parents before children)
+     */
+    private topologicalSortFolders(folders: ExportedFolder[]): ExportedFolder[] {
+        const sorted: ExportedFolder[] = [];
+        const visited = new Set<string>();
+        const folderMap = new Map(folders.map(f => [f.id, f]));
+
+        const visit = (folder: ExportedFolder) => {
+            if (visited.has(folder.id)) return;
+            if (folder.parentId && folderMap.has(folder.parentId)) {
+                const parent = folderMap.get(folder.parentId)!;
+                visit(parent);
+            }
+            visited.add(folder.id);
+            sorted.push(folder);
+        };
+
+        for (const folder of folders) {
+            visit(folder);
+        }
+
+        return sorted;
+    }
+
+    /**
+     * Collect a folder and all its descendant folder IDs
+     */
+    private collectFolderAndDescendantIds(folderId: string, folders: ExportedFolder[]): Set<string> {
+        const result = new Set<string>([folderId]);
+        const queue = [folderId];
+
+        while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            for (const folder of folders) {
+                if (folder.parentId === currentId && !result.has(folder.id)) {
+                    result.add(folder.id);
+                    queue.push(folder.id);
+                }
+            }
+        }
+
+        return result;
     }
 }

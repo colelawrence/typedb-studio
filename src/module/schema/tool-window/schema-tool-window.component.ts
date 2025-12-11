@@ -26,6 +26,8 @@ import { AppData } from "../../../service/app-data.service";
 import { SchemaTreeNodeComponent } from "../tree-node/schema-tree-node.component";
 import { MatDialog } from "@angular/material/dialog";
 import { SchemaTextDialogComponent } from "../text-dialog/schema-text-dialog.component";
+import { QueryPageState } from "../../../service/query-page-state.service";
+import { SchemaConcept } from "../../../service/schema-state.service";
 
 @Component({
     selector: "ts-schema-tool-window",
@@ -47,7 +49,7 @@ export class SchemaToolWindowComponent implements AfterViewInit {
 
     constructor(
         public state: SchemaToolWindowState, public driver: DriverState, private snackbar: SnackbarService,
-        private appData: AppData, private dialog: MatDialog,
+        private appData: AppData, private dialog: MatDialog, private queryPageState: QueryPageState,
     ) {
     }
 
@@ -91,5 +93,11 @@ export class SchemaToolWindowComponent implements AfterViewInit {
 
     openSchemaTextDialog() {
         this.dialog.open(SchemaTextDialogComponent, { width: "80vw", height: "80vh" });
+    }
+
+    queryType(concept: SchemaConcept) {
+        if (concept.kind === 'entityType' || concept.kind === 'relationType') {
+            this.queryPageState.loadQueryForType(concept);
+        }
     }
 }

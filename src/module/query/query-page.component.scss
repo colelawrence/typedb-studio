@@ -46,16 +46,20 @@
     }
 }
 
-.main-panes, .right-panes {
+.main-panes {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 4px !important;
 }
 
-.history-pane, .query-pane, .results-pane {
+.query-pane, .results-pane {
     display: flex;
     flex-direction: column;
+}
+
+.history-bar {
+    flex: 0 0 auto;
 }
 
 .results-pane mat-form-field {
@@ -311,69 +315,6 @@ button {
     display: flex;
 }
 
-.history-pane {
-    flex: 1;
-
-    @media (max-width: media.$max-width-mobile) {
-        display: none;
-    }
-
-    .history-container {
-        height: 100%;
-        width: 100%;
-        overflow: auto;
-        scrollbar-width: thin;
-    }
-
-    ol li {
-        list-style: none;
-        margin-top: 8px;
-
-        aside {
-            display: flex;
-            align-items: center;
-
-            .bullet {
-                margin: 0 4px;
-            }
-
-            tp-spinner {
-                width: unset;
-            }
-
-            .action-status {
-                margin-left: 8px;
-            }
-
-            .action-status i {
-                margin-left: 6px;
-                font-size: 12px;
-
-                &.fa-xmark {
-                    color: #{colors.$red};
-                    cursor: pointer;
-                }
-            }
-        }
-
-        .mat-divider {
-            margin-top: 8px;
-        }
-    }
-
-    mat-form-field {
-        margin-top: 4px;
-
-        textarea {
-            resize: none;
-            @include typography.code;
-        }
-    }
-
-    .transaction-operation-type {
-        min-width: 140px;
-    }
-}
 
 .menu-content {
     aside {

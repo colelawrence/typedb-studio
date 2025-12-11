@@ -105,7 +105,11 @@ export class RootComponent implements OnInit {
     }
 
     private checkImportUrlParam(): void {
+        // Check for URL-based import first (?import=...)
         this.queryImportUrl.checkAndHandleImportParam();
+
+        // Check for hash-based share link (#share=...)
+        this.queryImportUrl.checkAndHandleShareHash();
     }
 
     /**

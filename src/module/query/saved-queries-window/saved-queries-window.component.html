@@ -44,13 +44,12 @@
 
 <ng-template #treeNodeTemplate let-node>
   <div class="tree-node" [style.padding-left.px]="node.level * 16 + 8"
-       [class.folder]="node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports'"
-       [class.query]="node.type === 'query'"
-       [matMenuTriggerFor]="nodeContextMenu"
-       #menuTrigger="matMenuTrigger"
-       (contextmenu)="onContextMenu($event, node); menuTrigger.openMenu()"
-       (click)="node.type === 'query' ? selectQuery(node) : toggleNode(node)">
-    @if (node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports') {
+       [class.folder]="node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports' || node.type === 'shared-section' || node.type === 'shared-folder'"
+       [class.query]="node.type === 'query' || node.type === 'shared-query'"
+       [class.shared]="node.isShared"
+       (contextmenu)="onContextMenu($event, node, menuButtonTrigger)"
+       (click)="(node.type === 'query' || node.type === 'shared-query') ? selectQuery(node) : toggleNode(node)">
+    @if (node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports' || node.type === 'shared-section' || node.type === 'shared-folder') {
       <button matIconButton class="expand-button" (click)="toggleNode(node); $event.stopPropagation()">
         <mat-icon class="mat-icon-rtl-mirror">
           {{ isExpanded(node) ? 'expand_more' : 'chevron_right' }}
@@ -70,11 +69,50 @@
         }
       </span>
     }
+    <div class="flex-spacer"></div>
+    <button matIconButton
+            class="node-menu-button"
+            [matMenuTriggerFor]="nodeContextMenu"
+            #menuButtonTrigger="matMenuTrigger"
+            (click)="$event.stopPropagation()"
+            matTooltip="More actions"
+            matTooltipPosition="left">
+      <i class="fa-light fa-ellipsis-vertical"></i>
+    </button>
 
     <mat-menu #nodeContextMenu="matMenu">
-      @if (node.type === 'url-imports') {
+      @if (node.type === 'shared-section') {
+        <button mat-menu-item (click)="dismissSharedQueries()">
+          <i class="fa-light fa-xmark"></i>
+          <span>Dismiss</span>
+        </button>
+        <button mat-menu-item (click)="saveAllSharedQueries()">
+          <i class="fa-light fa-floppy-disk"></i>
+          <span>Save All to My Queries...</span>
+        </button>
+      } @else if (node.type === 'shared-folder') {
+        <button mat-menu-item (click)="saveSharedFolderToMyQueries(node.data)">
+          <i class="fa-light fa-floppy-disk"></i>
+          <span>Save Folder to My Queries...</span>
+        </button>
+      } @else if (node.type === 'shared-query') {
+        <button mat-menu-item (click)="selectQuery(node)">
+          <i class="fa-light fa-arrow-right"></i>
+          <span>Open in Editor</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="saveSharedQueryToMyQueries(node.data)">
+          <i class="fa-light fa-floppy-disk"></i>
+          <span>Save to My Queries...</span>
+        </button>
+      } @else if (node.type === 'url-imports') {
         <div class="menu-hint">URL-imported queries can be saved to your folders</div>
       } @else if (node.type === 'unsorted') {
+        <button mat-menu-item (click)="nameAndOrganizeUnsorted()">
+          <i class="fa-light fa-folder-arrow-right"></i>
+          <span>Name & Organize</span>
+        </button>
+        <mat-divider></mat-divider>
         <button mat-menu-item (click)="createQuery(null)">
           <i class="fa-light fa-file-plus"></i>
           <span>New Query</span>
@@ -104,6 +142,10 @@
         <button mat-menu-item (click)="exportFolder(node.data)">
           <i class="fa-light fa-download"></i>
           <span>Export Folder</span>
+        </button>
+        <button mat-menu-item (click)="copyFolderShareLink(node.data)">
+          <i class="fa-light fa-link"></i>
+          <span>Copy Share Link</span>
         </button>
         <mat-divider></mat-divider>
         <button mat-menu-item class="danger" (click)="deleteFolder(node.data)">
@@ -140,6 +182,10 @@
           <i class="fa-light fa-download"></i>
           <span>Export Query</span>
         </button>
+        <button mat-menu-item (click)="copyQueryShareLink(node.data)">
+          <i class="fa-light fa-link"></i>
+          <span>Copy Share Link</span>
+        </button>
         <mat-divider></mat-divider>
         <button mat-menu-item class="danger" (click)="deleteQuery(node.data)">
           <i class="fa-light fa-trash"></i>
@@ -148,7 +194,7 @@
       }
     </mat-menu>
   </div>
-  @if ((node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports') && isExpanded(node)) {
+  @if ((node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports' || node.type === 'shared-section' || node.type === 'shared-folder') && isExpanded(node)) {
     @for (child of node.children; track trackByFn($index, child)) {
       <ng-container *ngTemplateOutlet="treeNodeTemplate; context: { $implicit: child }"></ng-container>
     }

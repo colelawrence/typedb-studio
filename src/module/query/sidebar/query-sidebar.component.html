@@ -1,19 +1,29 @@
-<div class="sidebar-tabs">
-  <mat-button-toggle-group [(ngModel)]="activeTab" class="sidebar-tab-toggle">
-    <mat-button-toggle value="schema">
-      <i class="fa-light fa-diagram-project"></i>
-      <span>Schema</span>
-    </mat-button-toggle>
-    <mat-button-toggle value="queries">
-      <i class="fa-light fa-bookmark"></i>
-      <span>Queries</span>
-    </mat-button-toggle>
-  </mat-button-toggle-group>
+<div class="sidebar-section" [class.collapsed]="schemaCollapsed">
+  <div class="section-header" (click)="toggleSchema()">
+    <button mat-icon-button class="collapse-btn">
+      <mat-icon>{{ schemaCollapsed ? 'chevron_right' : 'expand_more' }}</mat-icon>
+    </button>
+    <i class="fa-light fa-diagram-project section-icon"></i>
+    <span class="section-title">Schema</span>
+  </div>
+  @if (!schemaCollapsed) {
+    <div class="section-content">
+      <ts-schema-tool-window [title]="''"/>
+    </div>
+  }
 </div>
-<div class="sidebar-content">
-  @if (activeTab === 'schema') {
-    <ts-schema-tool-window [title]="''"/>
-  } @else {
-    <ts-saved-queries-window (querySelected)="onQuerySelected($event)"/>
+
+<div class="sidebar-section" [class.collapsed]="queriesCollapsed">
+  <div class="section-header" (click)="toggleQueries()">
+    <button mat-icon-button class="collapse-btn">
+      <mat-icon>{{ queriesCollapsed ? 'chevron_right' : 'expand_more' }}</mat-icon>
+    </button>
+    <i class="fa-light fa-bookmark section-icon"></i>
+    <span class="section-title">Saved Queries</span>
+  </div>
+  @if (!queriesCollapsed) {
+    <div class="section-content">
+      <ts-saved-queries-window (querySelected)="onQuerySelected($event)"/>
+    </div>
   }
 </div>

@@ -21,3 +21,8 @@ export interface SchemaToolWindowState {
         attributes: boolean;
     };
 }
+
+export interface QuerySidebarState {
+    schemaCollapsed: boolean;
+    queriesCollapsed: boolean;
+}

@@ -1,7 +1,7 @@
 <ts-page-scaffold pageAvailability="ready">
   <article #articleRef class="query-page" style="display: flex; flex-direction: row;">
     <ts-query-sidebar resizable [percent]="20" (querySelected)="loadSavedQuery($event)"/>
-    <div class="main-panes" resizable [percent]="60">
+    <div class="main-panes" resizable [percent]="80">
       <div resizable [percent]="50" class="query-pane card">
         <div class="card-header">
           @let currentQueryName = state.currentSavedQueryName$ | async;
@@ -165,50 +165,7 @@
           </div>
         }
       </div>
-    </div>
-    <div resizable [percent]="20" class="right-panes">
-      <div class="history-pane card">
-        <div class="card-header">
-          <h5>History</h5>
-        </div>
-        <div class="history-container">
-          <ol>
-            @for (entry of state.history.entries; track entry) {
-              <li class="history-entry">
-                <aside class="text-muted">
-                  <time>{{ entry.startedAtTimestamp | date:'shortTime' }}</time>
-                  <span class="bullet">•</span>
-                  @if (isTransactionOperation(entry)) {
-                    <p class="transaction-operation-type">{{ transactionOperationString(entry) }}</p>
-                  } @else {
-                    <p class="transaction-operation-type">ran query</p>
-                  }
-                  <span class="flex-spacer"></span>
-                  <div class="action-status">
-                    @if (entry.status === "pending") {
-                      <tp-spinner [size]="14"/>
-                    } @else {
-                      <span>{{ actionDurationString(entry) }}</span>
-                      @if (entry.status === "success") {
-                        <i class="fa-light fa-check"></i>
-                      } @else {
-                        <i class="fa-light fa-xmark" richTooltip [richTooltipContent]="historyEntryErrorTooltip(entry)" (click)="copyHistoryEntryErrorTooltip(entry)"></i>
-                      }
-                    }
-                  </div>
-                </aside>
-                @if (isQueryRun(entry)) {
-                  <mat-form-field>
-                    <textarea class="history-query-text" [value]="queryHistoryPreview(entry.query)" readonly matInput
-                              cdkTextareaAutosize #autosize="cdkTextareaAutosize" cdkAutosizeMinRows="1" cdkAutosizeMaxRows="3">
-                    </textarea>
-                  </mat-form-field>
-                }
-              </li>
-            }
-          </ol>
-        </div>
-      </div>
+      <ts-history-bar class="history-bar"/>
     </div>
   </article>
 </ts-page-scaffold>

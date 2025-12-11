@@ -105,6 +105,10 @@
         }
     }
 
+    &.shared {
+        border-left: 3px solid colors.$attribute-blue;
+    }
+
     &.empty-folder {
         cursor: default;
         &:hover {
@@ -149,14 +153,42 @@
     .last-run-indicator {
         display: flex;
         align-items: center;
-        margin-left: auto;
-        
+        margin-left: 4px;
+
         .status-success {
             color: colors.$green;
         }
 
         .status-error {
             color: colors.$red;
+        }
+    }
+
+    .flex-spacer {
+        flex: 1;
+    }
+
+    .node-menu-button {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+
+        i {
+            font-size: 14px;
+        }
+    }
+
+    // Show menu button on hover (desktop)
+    &:hover .node-menu-button {
+        opacity: 1;
+    }
+
+    // Always show on touch devices
+    @media (hover: none) {
+        .node-menu-button {
+            opacity: 1;
         }
     }
 }

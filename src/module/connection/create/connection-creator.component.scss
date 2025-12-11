@@ -74,6 +74,17 @@ tp-form,
 
         code {
             font-family: "Monaco", monospace;
+
+            &.clickable-example {
+                cursor: pointer;
+                text-decoration: underline;
+                text-decoration-style: dashed;
+                text-underline-offset: 3px;
+
+                &:hover {
+                    color: colors.$white;
+                }
+            }
         }
     }
 }

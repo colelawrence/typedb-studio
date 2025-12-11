@@ -90,6 +90,27 @@
             padding-top: 16px;
         }
 
+        mat-tree-node.concept {
+            .query-type-btn {
+                opacity: 0;
+                transition: opacity 150ms ease;
+                margin-left: auto;
+                width: 24px;
+                height: 24px;
+                font-size: 12px;
+                color: colors.$green;
+
+                &:hover {
+                    color: colors.$white;
+                    background: colors.$green;
+                }
+            }
+
+            &:hover .query-type-btn {
+                opacity: 1;
+            }
+        }
+
         mat-tree-node.root button mat-icon {
             display: none;
         }

@@ -20,6 +20,7 @@ import { BehaviorSubject, debounceTime, distinctUntilChanged, Subject } from "rx
 import { AppData } from "../../../service/app-data.service";
 import { QueryExportService } from "../../../service/query-export.service";
 import { SnackbarService } from "../../../service/snackbar.service";
+import { UrlShareService } from "../../../service/url-share.service";
 import {
     SavedQuery,
     SavedQueryFolder,
@@ -34,12 +35,16 @@ import { ImportDialogComponent, ImportDialogData, ImportDialogResult } from "./i
 export interface SavedQueryTreeNode {
     id: string;
     name: string;
-    type: "folder" | "query" | "unsorted" | "url-imports";
+    type: "folder" | "query" | "unsorted" | "url-imports" | "shared-section" | "shared-folder" | "shared-query";
     children?: SavedQueryTreeNode[];
-    data?: SavedQuery | SavedQueryFolder;
+    data?: SavedQuery | SavedQueryFolder | any;
     level: number;
     /** True if this item was imported from URL and can be saved to user's folders */
     isImported?: boolean;
+    /** True if this is part of the shared section */
+    isShared?: boolean;
+    /** True if this query is currently selected in the shared section */
+    isSelected?: boolean;
 }
 
 @Component({
@@ -77,14 +82,20 @@ export class SavedQueriesWindowComponent {
         private dialog: MatDialog,
         private snackbar: SnackbarService,
         private queryExportService: QueryExportService,
+        private urlShareService: UrlShareService,
     ) {
         this.refreshTree();
-        
+
         this.searchSubject.pipe(
             debounceTime(200),
             distinctUntilChanged(),
         ).subscribe((searchText) => {
             this.applyFilter(searchText);
+        });
+
+        // Subscribe to shared queries and refresh tree when they change
+        this.appData.sharedQueries$.subscribe(() => {
+            this.refreshTree();
         });
     }
 
@@ -152,33 +163,50 @@ export class SavedQueriesWindowComponent {
     refreshTree(): void {
         const folders = this.appData.savedQueries.listFolders();
         const queries = this.appData.savedQueries.listQueries();
-        const tree = this.buildTree(folders, queries);
+        const sharedState = this.appData.getSharedQueries();
+        const tree = this.buildTree(folders, queries, sharedState);
         this.treeData$.next(tree);
         this.applyFilter(this.searchText);
     }
 
-    private buildTree(folders: SavedQueryFolder[], queries: SavedQuery[]): SavedQueryTreeNode[] {
+    private buildTree(
+        folders: SavedQueryFolder[],
+        queries: SavedQuery[],
+        sharedState: any | null
+    ): SavedQueryTreeNode[] {
         const result: SavedQueryTreeNode[] = [];
 
         const unsortedQueries = queries.filter(q => !q.folderId && !q.importKey);
-        const unsortedNode: SavedQueryTreeNode = {
-            id: UNSORTED_FOLDER_ID,
-            name: "Unsorted",
-            type: "unsorted",
-            level: 0,
-            children: unsortedQueries.map(q => ({
-                id: q.id,
-                name: q.name,
-                type: "query" as const,
-                data: q,
-                level: 1,
-            })),
-        };
-        result.push(unsortedNode);
+
+        // Only show Unsorted section if there are queries in it
+        if (unsortedQueries.length > 0) {
+            const unsortedNode: SavedQueryTreeNode = {
+                id: UNSORTED_FOLDER_ID,
+                name: "Unsorted",
+                type: "unsorted",
+                level: 0,
+                children: unsortedQueries.map(q => ({
+                    id: q.id,
+                    name: q.name,
+                    type: "query" as const,
+                    data: q,
+                    level: 1,
+                })),
+            };
+            result.push(unsortedNode);
+        }
 
         const rootFolders = folders.filter(f => !f.parentId && f.id !== URL_IMPORTS_FOLDER_ID);
         for (const folder of rootFolders) {
             result.push(this.buildFolderNode(folder, folders, queries, 0, false));
+        }
+
+        // Add shared section if present
+        if (sharedState) {
+            const sharedNode = this.buildSharedSection(sharedState);
+            result.push(sharedNode);
+            // Auto-expand shared section
+            this.expandedNodes.add("__shared__");
         }
 
         const urlImportsFolder = folders.find(f => f.id === URL_IMPORTS_FOLDER_ID);
@@ -253,10 +281,81 @@ export class SavedQueriesWindowComponent {
         };
     }
 
+    private buildSharedSection(sharedState: any): SavedQueryTreeNode {
+        const selectedQueryId = sharedState.selectedQueryId;
+
+        // Build children from shared data
+        const children: SavedQueryTreeNode[] = [];
+
+        // Add folders
+        const rootFolders = sharedState.data.folders.filter((f: any) => !f.parentId);
+        for (const folder of rootFolders) {
+            children.push(this.buildSharedFolderNode(folder, sharedState.data.folders, sharedState.data.queries, 1, selectedQueryId));
+        }
+
+        // Add root-level queries (no folderId)
+        const rootQueries = sharedState.data.queries.filter((q: any) => !q.folderId);
+        for (const query of rootQueries) {
+            children.push({
+                id: `shared_${query.id}`,
+                name: query.name,
+                type: "shared-query" as const,
+                data: query,
+                level: 1,
+                isShared: true,
+                isSelected: query.id === selectedQueryId,
+            });
+        }
+
+        return {
+            id: "__shared__",
+            name: sharedState.displayName,
+            type: "shared-section",
+            level: 0,
+            isShared: true,
+            children,
+        };
+    }
+
+    private buildSharedFolderNode(
+        folder: any,
+        allFolders: any[],
+        allQueries: any[],
+        level: number,
+        selectedQueryId?: string
+    ): SavedQueryTreeNode {
+        const childFolders = allFolders.filter(f => f.parentId === folder.id);
+        const childQueries = allQueries.filter(q => q.folderId === folder.id);
+
+        const children: SavedQueryTreeNode[] = [
+            ...childFolders.map(f => this.buildSharedFolderNode(f, allFolders, allQueries, level + 1, selectedQueryId)),
+            ...childQueries.map(q => ({
+                id: `shared_${q.id}`,
+                name: q.name,
+                type: "shared-query" as const,
+                data: q,
+                level: level + 1,
+                isShared: true,
+                isSelected: q.id === selectedQueryId,
+            })),
+        ];
+
+        return {
+            id: `shared_folder_${folder.id}`,
+            name: folder.name,
+            type: "shared-folder",
+            data: folder,
+            level,
+            isShared: true,
+            children,
+        };
+    }
+
     childrenAccessor = (node: SavedQueryTreeNode): SavedQueryTreeNode[] => node.children ?? [];
 
     hasChild = (_: number, node: SavedQueryTreeNode): boolean =>
-        node.type === "folder" || node.type === "unsorted" || node.type === "url-imports";
+        node.type === "folder" || node.type === "unsorted" || node.type === "url-imports" ||
+        node.type === "shared-section" || node.type === "shared-folder";
 
     isExpanded(node: SavedQueryTreeNode): boolean {
         return this.expandedNodes.has(node.id);
@@ -273,6 +372,21 @@ export class SavedQueriesWindowComponent {
     selectQuery(node: SavedQueryTreeNode): void {
         if (node.type === "query" && node.data) {
             this.querySelected.emit(node.data as SavedQuery);
+        } else if (node.type === "shared-query" && node.data) {
+            // Emit shared query as if it's a saved query for loading in editor
+            const sharedQuery: SavedQuery = {
+                id: node.data.id,
+                name: node.data.name,
+                queryText: node.data.queryText,
+                description: node.data.description,
+                folderId: null,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+            this.querySelected.emit(sharedQuery);
+
+            // Mark as selected in shared state
+            this.appData.markSharedQueryAsSelected(node.data.id);
         }
     }
 
@@ -283,9 +397,15 @@ export class SavedQueriesWindowComponent {
             case "url-imports":
                 return this.isExpanded(node) ? "fa-light fa-cloud-arrow-down" : "fa-light fa-cloud";
             case "folder":
+            case "shared-folder":
                 return this.isExpanded(node) ? "fa-light fa-folder-open" : "fa-light fa-folder";
             case "query":
+            case "shared-query":
                 return node.isImported ? "fa-light fa-file-arrow-down" : "fa-light fa-file-code";
+            case "shared-section":
+                return "fa-light fa-share-nodes";
+            default:
+                return "fa-light fa-file";
         }
     }
 
@@ -422,8 +542,9 @@ export class SavedQueriesWindowComponent {
         });
     }
 
-    onContextMenu(event: MouseEvent, node: SavedQueryTreeNode): void {
+    onContextMenu(event: MouseEvent, node: SavedQueryTreeNode, menuTrigger: any): void {
         event.preventDefault();
+        menuTrigger.openMenu();
     }
 
     exportQueries(): void {
@@ -492,6 +613,162 @@ export class SavedQueriesWindowComponent {
                 });
                 this.refreshTree();
                 this.snackbar.success(`Query "${query.name}" saved to your queries`);
+            }
+        });
+    }
+
+    async copyFolderShareLink(folder: SavedQueryFolder): Promise<void> {
+        try {
+            const result = await this.urlShareService.generateShareLink(folder.id);
+
+            if ('error' in result) {
+                // Too large
+                this.snackbar.errorPersistent(`${result.error}. ${result.suggestion}`);
+                return;
+            }
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(result.link);
+
+            // Show success
+            const count = result.stats.queries;
+            const message = `Share link copied! (${count} quer${count === 1 ? 'y' : 'ies'})`;
+
+            if (result.warning) {
+                this.snackbar.warn(message + ' - ' + result.warning);
+            } else {
+                this.snackbar.success(message);
+            }
+        } catch (e) {
+            this.snackbar.errorPersistent(`Failed to generate share link: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
+    async copyQueryShareLink(query: SavedQuery): Promise<void> {
+        try {
+            const result = await this.urlShareService.generateQueryShareLink(query.id);
+
+            if ('error' in result) {
+                this.snackbar.errorPersistent(`${result.error}. ${result.suggestion}`);
+                return;
+            }
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(result.link);
+
+            // Show success
+            this.snackbar.success('Share link copied!');
+        } catch (e) {
+            this.snackbar.errorPersistent(`Failed to generate share link: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+
+    nameAndOrganizeUnsorted(): void {
+        const unsortedQueries = this.appData.savedQueries.listQueries().filter(q => !q.folderId && !q.importKey);
+
+        if (unsortedQueries.length === 0) {
+            this.snackbar.warn('No unsorted queries to organize');
+            return;
+        }
+
+        const dialogRef = this.dialog.open(FolderDialogComponent, {
+            width: "400px",
+            data: {
+                mode: "create",
+                parentId: null,
+                name: "Unsorted Queries" // Default suggestion
+            } as FolderDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: FolderDialogResult | undefined) => {
+            if (result?.action === "save") {
+                // Create the new folder
+                const newFolder = this.appData.savedQueries.createFolder(result.name, null);
+
+                // Move all unsorted queries into it
+                for (const query of unsortedQueries) {
+                    this.appData.savedQueries.updateQuery(query.id, { folderId: newFolder.id });
+                }
+
+                this.refreshTree();
+                this.expandedNodes.add(newFolder.id);
+                this.snackbar.success(`Organized ${unsortedQueries.length} quer${unsortedQueries.length === 1 ? 'y' : 'ies'} into "${result.name}"`);
+            }
+        });
+    }
+
+    dismissSharedQueries(): void {
+        this.appData.dismissSharedQueries();
+        this.snackbar.success('Shared queries dismissed');
+    }
+
+    saveAllSharedQueries(): void {
+        const folders = this.appData.savedQueries.listFolders()
+            .filter(f => !f.importKey && f.id !== URL_IMPORTS_FOLDER_ID);
+
+        const dialogRef = this.dialog.open(MoveDialogComponent, {
+            width: "400px",
+            data: {
+                itemName: "all shared queries",
+                itemType: "folder",
+                currentFolderId: null,
+                folders,
+            } as MoveDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
+            if (result?.action === "move") {
+                this.appData.saveAllSharedQueries(result.targetFolderId);
+                this.refreshTree();
+                this.snackbar.success('All shared queries saved to your queries');
+            }
+        });
+    }
+
+    saveSharedQueryToMyQueries(query: any): void {
+        const folders = this.appData.savedQueries.listFolders()
+            .filter(f => !f.importKey && f.id !== URL_IMPORTS_FOLDER_ID);
+
+        const dialogRef = this.dialog.open(MoveDialogComponent, {
+            width: "400px",
+            data: {
+                itemName: query.name,
+                itemType: "query",
+                currentFolderId: null,
+                folders,
+            } as MoveDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
+            if (result?.action === "move") {
+                const savedQuery = this.appData.saveSharedQueryToMyQueries(query.id, result.targetFolderId);
+                if (savedQuery) {
+                    this.refreshTree();
+                    this.snackbar.success(`Query "${query.name}" saved to your queries`);
+                }
+            }
+        });
+    }
+
+    saveSharedFolderToMyQueries(folder: any): void {
+        const folders = this.appData.savedQueries.listFolders()
+            .filter(f => !f.importKey && f.id !== URL_IMPORTS_FOLDER_ID);
+
+        const dialogRef = this.dialog.open(MoveDialogComponent, {
+            width: "400px",
+            data: {
+                itemName: folder.name,
+                itemType: "folder",
+                currentFolderId: null,
+                folders,
+            } as MoveDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
+            if (result?.action === "move") {
+                this.appData.saveSharedFolderToMyQueries(folder.id, result.targetFolderId);
+                this.refreshTree();
+                this.snackbar.success(`Folder "${folder.name}" saved to your queries`);
             }
         });
     }
