@@ -7,3 +7,4 @@
 export const USERNAME = "username";
 export const ADDRESS = "address";
 export const NAME = "name";
+export const IMPORT_URL = "import";

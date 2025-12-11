@@ -14,6 +14,7 @@ import { AppData } from "./service/app-data.service";
 import { DriverState } from "./service/driver-state.service";
 import { SnackbarService } from "./service/snackbar.service";
 import { AutoLoginService } from "./service/auto-login.service";
+import { QueryImportUrlService } from "./service/query-import-url.service";
 
 @Component({
     selector: "ts-root", // eslint-disable-line @angular-eslint/component-selector
@@ -42,6 +43,7 @@ export class RootComponent implements OnInit {
         private driver: DriverState,
         private snackbar: SnackbarService,
         private autoLogin: AutoLoginService,
+        private queryImportUrl: QueryImportUrlService,
     ) {
         this.informAnalyticsOnPageView(router, analytics);
     }
@@ -67,12 +69,14 @@ export class RootComponent implements OnInit {
                 next: () => {
                     this.snackbar.info(`Connected via auto-login`);
                     this.initialised = true;
+                    this.checkImportUrlParam();
                 },
                 error: (err) => {
                     console.warn("Auto-login failed:", err);
                     const errorMessage = this.extractErrorMessage(err);
                     this.snackbar.errorPersistent(`Auto-login failed: ${errorMessage}`);
                     this.initialised = true;
+                    this.checkImportUrlParam();
                 },
             });
             return;
@@ -85,16 +89,23 @@ export class RootComponent implements OnInit {
                 next: () => {
                     this.snackbar.info(`Connected to ${initialConnectionConfig.name}`);
                     this.initialised = true;
+                    this.checkImportUrlParam();
                 },
                 error: (err) => {
                     console.warn(err);
                     this.appData.connections.clearStartupConnection();
                     this.initialised = true;
+                    this.checkImportUrlParam();
                 },
             });
         } else {
             this.initialised = true;
+            this.checkImportUrlParam();
         }
+    }
+
+    private checkImportUrlParam(): void {
+        this.queryImportUrl.checkAndHandleImportParam();
     }
 
     /**

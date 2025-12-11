@@ -24,18 +24,22 @@ import {
     SavedQuery,
     SavedQueryFolder,
     UNSORTED_FOLDER_ID,
+    URL_IMPORTS_FOLDER_ID,
 } from "../../../concept/saved-query";
 import { SavedQueryDialogComponent, SavedQueryDialogData, SavedQueryDialogResult } from "./saved-query-dialog.component";
 import { FolderDialogComponent, FolderDialogData, FolderDialogResult } from "./folder-dialog.component";
 import { MoveDialogComponent, MoveDialogData, MoveDialogResult } from "./move-dialog.component";
+import { ImportDialogComponent, ImportDialogData, ImportDialogResult } from "./import-dialog.component";
 
 export interface SavedQueryTreeNode {
     id: string;
     name: string;
-    type: "folder" | "query" | "unsorted";
+    type: "folder" | "query" | "unsorted" | "url-imports";
     children?: SavedQueryTreeNode[];
     data?: SavedQuery | SavedQueryFolder;
     level: number;
+    /** True if this item was imported from URL and can be saved to user's folders */
+    isImported?: boolean;
 }
 
 @Component({
@@ -156,7 +160,7 @@ export class SavedQueriesWindowComponent {
     private buildTree(folders: SavedQueryFolder[], queries: SavedQuery[]): SavedQueryTreeNode[] {
         const result: SavedQueryTreeNode[] = [];
 
-        const unsortedQueries = queries.filter(q => !q.folderId);
+        const unsortedQueries = queries.filter(q => !q.folderId && !q.importKey);
         const unsortedNode: SavedQueryTreeNode = {
             id: UNSORTED_FOLDER_ID,
             name: "Unsorted",
@@ -172,31 +176,69 @@ export class SavedQueriesWindowComponent {
         };
         result.push(unsortedNode);
 
-        const rootFolders = folders.filter(f => !f.parentId);
+        const rootFolders = folders.filter(f => !f.parentId && f.id !== URL_IMPORTS_FOLDER_ID);
         for (const folder of rootFolders) {
-            result.push(this.buildFolderNode(folder, folders, queries, 0));
+            result.push(this.buildFolderNode(folder, folders, queries, 0, false));
+        }
+
+        const urlImportsFolder = folders.find(f => f.id === URL_IMPORTS_FOLDER_ID);
+        if (urlImportsFolder) {
+            const urlImportsNode = this.buildUrlImportsFolderNode(urlImportsFolder, folders, queries);
+            result.push(urlImportsNode);
         }
 
         return result;
+    }
+
+    private buildUrlImportsFolderNode(
+        folder: SavedQueryFolder,
+        allFolders: SavedQueryFolder[],
+        allQueries: SavedQuery[],
+    ): SavedQueryTreeNode {
+        const childFolders = allFolders.filter(f => f.parentId === folder.id);
+        const childQueries = allQueries.filter(q => q.folderId === folder.id);
+
+        const children: SavedQueryTreeNode[] = [
+            ...childFolders.map(f => this.buildFolderNode(f, allFolders, allQueries, 1, true)),
+            ...childQueries.map(q => ({
+                id: q.id,
+                name: q.name,
+                type: "query" as const,
+                data: q,
+                level: 1,
+                isImported: true,
+            })),
+        ];
+
+        return {
+            id: folder.id,
+            name: folder.name,
+            type: "url-imports",
+            data: folder,
+            level: 0,
+            children,
+        };
     }
 
     private buildFolderNode(
         folder: SavedQueryFolder,
         allFolders: SavedQueryFolder[],
         allQueries: SavedQuery[],
-        level: number
+        level: number,
+        isImported: boolean,
     ): SavedQueryTreeNode {
         const childFolders = allFolders.filter(f => f.parentId === folder.id);
         const childQueries = allQueries.filter(q => q.folderId === folder.id);
 
         const children: SavedQueryTreeNode[] = [
-            ...childFolders.map(f => this.buildFolderNode(f, allFolders, allQueries, level + 1)),
+            ...childFolders.map(f => this.buildFolderNode(f, allFolders, allQueries, level + 1, isImported)),
             ...childQueries.map(q => ({
                 id: q.id,
                 name: q.name,
                 type: "query" as const,
                 data: q,
                 level: level + 1,
+                isImported,
             })),
         ];
 
@@ -207,13 +249,14 @@ export class SavedQueriesWindowComponent {
             data: folder,
             level,
             children,
+            isImported,
         };
     }
 
     childrenAccessor = (node: SavedQueryTreeNode): SavedQueryTreeNode[] => node.children ?? [];
 
     hasChild = (_: number, node: SavedQueryTreeNode): boolean =>
-        node.type === "folder" || node.type === "unsorted";
+        node.type === "folder" || node.type === "unsorted" || node.type === "url-imports";
 
     isExpanded(node: SavedQueryTreeNode): boolean {
         return this.expandedNodes.has(node.id);
@@ -237,10 +280,12 @@ export class SavedQueriesWindowComponent {
         switch (node.type) {
             case "unsorted":
                 return "fa-light fa-inbox";
+            case "url-imports":
+                return this.isExpanded(node) ? "fa-light fa-cloud-arrow-down" : "fa-light fa-cloud";
             case "folder":
                 return this.isExpanded(node) ? "fa-light fa-folder-open" : "fa-light fa-folder";
             case "query":
-                return "fa-light fa-file-code";
+                return node.isImported ? "fa-light fa-file-arrow-down" : "fa-light fa-file-code";
         }
     }
 
@@ -384,5 +429,70 @@ export class SavedQueriesWindowComponent {
     exportQueries(): void {
         this.queryExportService.downloadAsFile();
         this.snackbar.success("Queries exported");
+    }
+
+    importQueries(): void {
+        const dialogRef = this.dialog.open(ImportDialogComponent, {
+            width: "500px",
+            data: { mode: "file" } as ImportDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: ImportDialogResult | undefined) => {
+            if (result?.action === "import" && result.data) {
+                const importResult = this.queryExportService.importQueries(result.data, result.strategy);
+                this.refreshTree();
+
+                if (importResult.success) {
+                    const parts: string[] = [];
+                    const added = importResult.foldersAdded + importResult.queriesAdded;
+                    const updated = importResult.foldersUpdated + importResult.queriesUpdated;
+                    if (added > 0) parts.push(`${added} added`);
+                    if (updated > 0) parts.push(`${updated} updated`);
+                    this.snackbar.success(`Import complete: ${parts.join(", ") || "no changes"}`);
+                } else {
+                    this.snackbar.warnPersistent(
+                        `Import completed with errors: ${importResult.errors.join("; ")}`
+                    );
+                }
+            }
+        });
+    }
+
+    exportFolder(folder: SavedQueryFolder): void {
+        this.queryExportService.downloadFolderAsFile(folder.id, folder.name);
+        this.snackbar.success(`Folder "${folder.name}" exported`);
+    }
+
+    exportSingleQuery(query: SavedQuery): void {
+        this.queryExportService.downloadQueryAsFile(query.id, query.name);
+        this.snackbar.success(`Query "${query.name}" exported`);
+    }
+
+    saveImportedQueryToMyQueries(query: SavedQuery): void {
+        const folders = this.appData.savedQueries.listFolders()
+            .filter(f => !f.importKey && f.id !== URL_IMPORTS_FOLDER_ID);
+
+        const dialogRef = this.dialog.open(MoveDialogComponent, {
+            width: "400px",
+            data: {
+                itemName: query.name,
+                itemType: "query",
+                currentFolderId: null,
+                folders,
+            } as MoveDialogData,
+        });
+
+        dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
+            if (result?.action === "move") {
+                this.appData.savedQueries.createQuery({
+                    name: query.name,
+                    queryText: query.queryText,
+                    description: query.description,
+                    folderId: result.targetFolderId,
+                });
+                this.refreshTree();
+                this.snackbar.success(`Query "${query.name}" saved to your queries`);
+            }
+        });
     }
 }

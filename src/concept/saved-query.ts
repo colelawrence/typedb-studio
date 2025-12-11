@@ -5,6 +5,7 @@
  */
 
 export const UNSORTED_FOLDER_ID = "__unsorted__";
+export const URL_IMPORTS_FOLDER_ID = "__url_imports__";
 
 export interface SavedQueryFolder {
     id: string;
@@ -12,6 +13,8 @@ export interface SavedQueryFolder {
     parentId: string | null;
     createdAt: string;
     updatedAt: string;
+    /** Key for deduplication when re-importing from same source */
+    importKey?: string;
 }
 
 export interface QueryResultSummary {
@@ -35,6 +38,8 @@ export interface SavedQuery {
     lastVariablesUsed?: unknown | null;
     createdAt: string;
     updatedAt: string;
+    /** Key for deduplication when re-importing from same source */
+    importKey?: string;
 }
 
 export interface QueryHistoryEntry {

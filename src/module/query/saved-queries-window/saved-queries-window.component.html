@@ -12,6 +12,9 @@
       <button matIconButton matTooltip="Export queries" matTooltipPosition="below" matTooltipShowDelay="500" (click)="exportQueries()">
         <i class="fa-light fa-download"></i>
       </button>
+      <button matIconButton matTooltip="Import queries" matTooltipPosition="below" matTooltipShowDelay="500" (click)="importQueries()">
+        <i class="fa-light fa-upload"></i>
+      </button>
       <button matIconButton matTooltip="Refresh" matTooltipPosition="below" matTooltipShowDelay="500" (click)="refreshTree()">
         <i class="fa-light fa-refresh"></i>
       </button>
@@ -41,13 +44,13 @@
 
 <ng-template #treeNodeTemplate let-node>
   <div class="tree-node" [style.padding-left.px]="node.level * 16 + 8"
-       [class.folder]="node.type === 'folder' || node.type === 'unsorted'"
+       [class.folder]="node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports'"
        [class.query]="node.type === 'query'"
        [matMenuTriggerFor]="nodeContextMenu"
        #menuTrigger="matMenuTrigger"
        (contextmenu)="onContextMenu($event, node); menuTrigger.openMenu()"
        (click)="node.type === 'query' ? selectQuery(node) : toggleNode(node)">
-    @if (node.type === 'folder' || node.type === 'unsorted') {
+    @if (node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports') {
       <button matIconButton class="expand-button" (click)="toggleNode(node); $event.stopPropagation()">
         <mat-icon class="mat-icon-rtl-mirror">
           {{ isExpanded(node) ? 'expand_more' : 'chevron_right' }}
@@ -69,7 +72,9 @@
     }
 
     <mat-menu #nodeContextMenu="matMenu">
-      @if (node.type === 'unsorted') {
+      @if (node.type === 'url-imports') {
+        <div class="menu-hint">URL-imported queries can be saved to your folders</div>
+      } @else if (node.type === 'unsorted') {
         <button mat-menu-item (click)="createQuery(null)">
           <i class="fa-light fa-file-plus"></i>
           <span>New Query</span>
@@ -78,7 +83,7 @@
           <i class="fa-light fa-folder-plus"></i>
           <span>New Folder</span>
         </button>
-      } @else if (node.type === 'folder') {
+      } @else if (node.type === 'folder' && !node.isImported) {
         <button mat-menu-item (click)="createQuery(node.id)">
           <i class="fa-light fa-file-plus"></i>
           <span>New Query</span>
@@ -96,10 +101,26 @@
           <i class="fa-light fa-arrow-right-arrow-left"></i>
           <span>Move to...</span>
         </button>
+        <button mat-menu-item (click)="exportFolder(node.data)">
+          <i class="fa-light fa-download"></i>
+          <span>Export Folder</span>
+        </button>
         <mat-divider></mat-divider>
         <button mat-menu-item class="danger" (click)="deleteFolder(node.data)">
           <i class="fa-light fa-trash"></i>
           <span>Delete</span>
+        </button>
+      } @else if (node.type === 'folder' && node.isImported) {
+        <div class="menu-hint">Imported folder from URL</div>
+      } @else if (node.type === 'query' && node.isImported) {
+        <button mat-menu-item (click)="selectQuery(node)">
+          <i class="fa-light fa-arrow-right"></i>
+          <span>Open in Editor</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="saveImportedQueryToMyQueries(node.data)">
+          <i class="fa-light fa-floppy-disk"></i>
+          <span>Save to My Queries...</span>
         </button>
       } @else if (node.type === 'query') {
         <button mat-menu-item (click)="selectQuery(node)">
@@ -115,6 +136,10 @@
           <i class="fa-light fa-arrow-right-arrow-left"></i>
           <span>Move to...</span>
         </button>
+        <button mat-menu-item (click)="exportSingleQuery(node.data)">
+          <i class="fa-light fa-download"></i>
+          <span>Export Query</span>
+        </button>
         <mat-divider></mat-divider>
         <button mat-menu-item class="danger" (click)="deleteQuery(node.data)">
           <i class="fa-light fa-trash"></i>
@@ -123,7 +148,7 @@
       }
     </mat-menu>
   </div>
-  @if ((node.type === 'folder' || node.type === 'unsorted') && isExpanded(node)) {
+  @if ((node.type === 'folder' || node.type === 'unsorted' || node.type === 'url-imports') && isExpanded(node)) {
     @for (child of node.children; track trackByFn($index, child)) {
       <ng-container *ngTemplateOutlet="treeNodeTemplate; context: { $implicit: child }"></ng-container>
     }

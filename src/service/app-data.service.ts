@@ -20,6 +20,7 @@ import {
     SavedQuery,
     SavedQueryFolder,
     UNSORTED_FOLDER_ID,
+    URL_IMPORTS_FOLDER_ID,
 } from "../concept/saved-query";
 import { SchemaToolWindowState, SidebarState, sidebarStates, Tool, tools } from "../concept/view-state";
 import { StorageService, StorageWriteResult } from "./storage.service";
@@ -386,6 +387,102 @@ class SavedQueries {
 
     clearAll(): void {
         this.writeStorage(INITIAL_SAVED_QUERIES_DATA);
+    }
+
+    findFolderByImportKey(importKey: string): SavedQueryFolder | undefined {
+        return this.listFolders().find(f => f.importKey === importKey);
+    }
+
+    findQueriesByImportKey(importKey: string): SavedQuery[] {
+        return this.listQueries().filter(q => q.importKey === importKey);
+    }
+
+    findFoldersByImportKey(importKey: string): SavedQueryFolder[] {
+        return this.listFolders().filter(f => f.importKey === importKey);
+    }
+
+    createFolderWithImportKey(params: {
+        id?: string;
+        name: string;
+        parentId: string | null;
+        importKey: string;
+    }): SavedQueryFolder {
+        const data = this.readStorage();
+        const now = new Date().toISOString();
+        const folder: SavedQueryFolder = {
+            id: params.id ?? generateId(),
+            name: params.name,
+            parentId: params.parentId,
+            importKey: params.importKey,
+            createdAt: now,
+            updatedAt: now,
+        };
+        data.folders.push(folder);
+        this.writeStorage(data);
+        return folder;
+    }
+
+    createQueryWithImportKey(params: {
+        id?: string;
+        name: string;
+        queryText: string;
+        folderId: string | null;
+        description?: string;
+        importKey: string;
+    }): SavedQuery {
+        const data = this.readStorage();
+        const now = new Date().toISOString();
+        const query: SavedQuery = {
+            id: params.id ?? generateId(),
+            folderId: params.folderId,
+            name: params.name,
+            queryText: params.queryText,
+            description: params.description,
+            importKey: params.importKey,
+            createdAt: now,
+            updatedAt: now,
+        };
+        data.queries.push(query);
+        this.writeStorage(data);
+        return query;
+    }
+
+    deleteByImportKey(importKey: string): { foldersDeleted: number; queriesDeleted: number } {
+        const data = this.readStorage();
+        const originalFolderCount = data.folders.length;
+        const originalQueryCount = data.queries.length;
+
+        data.folders = data.folders.filter(f => f.importKey !== importKey);
+        data.queries = data.queries.filter(q => q.importKey !== importKey);
+
+        this.writeStorage(data);
+
+        return {
+            foldersDeleted: originalFolderCount - data.folders.length,
+            queriesDeleted: originalQueryCount - data.queries.length,
+        };
+    }
+
+    getUrlImportsFolder(): SavedQueryFolder | null {
+        return this.listFolders().find(f => f.id === URL_IMPORTS_FOLDER_ID) ?? null;
+    }
+
+    ensureUrlImportsFolder(): SavedQueryFolder {
+        const existing = this.getUrlImportsFolder();
+        if (existing) return existing;
+
+        const data = this.readStorage();
+        const now = new Date().toISOString();
+        const folder: SavedQueryFolder = {
+            id: URL_IMPORTS_FOLDER_ID,
+            name: "URL Imports",
+            parentId: null,
+            createdAt: now,
+            updatedAt: now,
+        };
+        data.folders.push(folder);
+        this.writeStorage(data);
+        return folder;
     }
 }
 

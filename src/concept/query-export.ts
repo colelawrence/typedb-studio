@@ -14,6 +14,10 @@ export interface ExportedQueriesFile {
         appName: string;
         appVersion: string;
     };
+    /** Unique key for deduplication when re-importing from same source (e.g., URL or file path) */
+    importKey?: string;
+    /** Human-readable name for the import source (shown as folder name for URL imports) */
+    importName?: string;
     folders: ExportedFolder[];
     queries: ExportedQuery[];
 }
@@ -55,6 +59,8 @@ interface RawData {
     version?: unknown;
     exportedAt?: unknown;
     source?: unknown;
+    importKey?: unknown;
+    importName?: unknown;
     folders?: unknown;
     queries?: unknown;
 }
@@ -109,6 +115,8 @@ export function parseExportedQueriesFile(json: unknown): ExportedQueriesFile {
         version: EXPORT_VERSION,
         exportedAt: typeof data.exportedAt === "string" ? data.exportedAt : new Date().toISOString(),
         source: validateSource(data.source),
+        importKey: typeof data.importKey === "string" ? data.importKey : undefined,
+        importName: typeof data.importName === "string" ? data.importName : undefined,
         folders,
         queries,
     };
