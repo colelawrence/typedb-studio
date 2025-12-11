@@ -6,7 +6,7 @@
 
 import { inject, Injectable } from "@angular/core";
 import { FormControl } from "@angular/forms";
-import { BehaviorSubject, combineLatest, first, map, Observable, shareReplay, startWith } from "rxjs";
+import { BehaviorSubject, combineLatest, first, map, Observable, shareReplay, startWith, distinctUntilChanged } from "rxjs";
 import { DriverAction } from "../concept/action";
 import {createSigmaRenderer, GraphVisualiser} from "../framework/graph-visualiser";
 import { defaultSigmaSettings } from "../framework/graph-visualiser/defaults";
@@ -14,6 +14,7 @@ import { newVisualGraph } from "../framework/graph-visualiser/graph";
 import { Layouts } from "../framework/graph-visualiser/layouts";
 import { detectOS } from "../framework/util/os";
 import { INTERNAL_ERROR } from "../framework/util/strings";
+import { AppData } from "./app-data.service";
 import { DriverState } from "./driver-state.service";
 import { SchemaState } from "./schema-state.service";
 import { SnackbarService } from "./snackbar.service";
@@ -21,6 +22,7 @@ import {
     ApiResponse, Attribute, Concept, ConceptDocument, ConceptRow, isApiErrorResponse, QueryResponse, Value
 } from "@typedb/driver-http";
 import { VibeQueryState } from "./vibe-query-state.service";
+import { MAX_SAMPLE_ROWS, QueryResultSummary, truncateResults } from "../concept/saved-query";
 
 export type QueryType = "code" | "chat";
 export type OutputType = "raw" | "log" | "table" | "graph";
@@ -39,9 +41,35 @@ const RUN_KEY_BINDING = detectOS() === "mac" ? "⌘+Enter" : "Ctrl+Enter";
 export class QueryPageState {
 
     private driver = inject(DriverState);
+    private appData = inject(AppData);
     vibeQuery = inject(VibeQueryState);
     schema = inject(SchemaState);
     private snackbar = inject(SnackbarService);
+
+    private currentQueryStartTime?: number;
+    private readonly _currentSavedQueryId$ = new BehaviorSubject<string | null>(null);
+    private readonly _originalQueryText$ = new BehaviorSubject<string>("");
+
+    readonly currentSavedQueryId$ = this._currentSavedQueryId$.asObservable();
+    
+    readonly isDirty$: Observable<boolean> = combineLatest([
+        this._currentSavedQueryId$,
+        this._originalQueryText$,
+        this.queryEditorControl.valueChanges.pipe(startWith(this.queryEditorControl.value)),
+    ]).pipe(
+        map(([id, original, currentText]) => {
+            if (!id) return false;
+            return currentText !== original;
+        }),
+        distinctUntilChanged(),
+        shareReplay(1),
+    );
+
+    readonly currentSavedQueryName$ = this._currentSavedQueryId$.pipe(
+        map(id => id ? this.appData.savedQueries.getQueryById(id)?.name ?? null : null),
+        distinctUntilChanged(),
+        shareReplay(1),
+    );
 
     queryTypeControl = new FormControl("code" as QueryType, {nonNullable: true});
     queryTypes: QueryType[] = ["code", "chat"];
@@ -75,42 +103,206 @@ export class QueryPageState {
             if (disabled) this.outputTypeControl.disable();
             else this.outputTypeControl.enable();
         });
+
+        this.driver.database$.subscribe((db) => {
+            if (db?.name) {
+                const lastQuery = this.appData.queryHistory.getLastQueryForDb(db.name);
+                if (lastQuery && !this.queryEditorControl.value.trim()) {
+                    this.queryEditorControl.patchValue(lastQuery);
+                }
+            }
+        });
     }
 
     // TODO: LIMIT 1000 by default, configurable
 
     runQuery(query: string) {
+        this.currentQueryStartTime = Date.now();
         this.initialiseOutput(query);
         this.driver.query(query).subscribe({
             next: (res) => {
                 this.outputQueryResponse(res);
+                this.persistQueryToHistory(query, res);
             },
             error: (err) => {
-                this.driver.checkHealth().subscribe({
-                    next: () => {
-                        let msg = ``;
-                        if (isApiErrorResponse(err)) {
-                            msg = err.err.message;
-                        } else {
-                            msg = err?.message ?? err?.toString() ?? `Unknown error`;
-                        }
-                        this.snackbar.errorPersistent(`Error: ${msg}\n`
-                            + `Caused: Failed to execute query.`);
-                    },
-                    error: () => {
-                        this.driver.connection$.pipe(first()).subscribe((connection) => {
-                            if (connection && connection.url.includes(`localhost`)) {
-                                this.snackbar.errorPersistent(`Unable to connect to TypeDB server.\n`
-                                    + `Ensure the server is still running.`);
-                            } else {
-                                this.snackbar.errorPersistent(`Unable to connect to TypeDB server.\n`
-                                    + `Check your network connection and ensure the server is still running.`);
-                            }
-                        });
-                    }
-                });
+                this.handleQueryError(query, err);
             },
         });
+    }
+
+    private handleQueryError(query: string, err: unknown): void {
+        this.driver.checkHealth().subscribe({
+            next: () => {
+                let msg = ``;
+                if (isApiErrorResponse(err)) {
+                    msg = err.err.message;
+                } else {
+                    msg = (err as Error)?.message ?? (err as object)?.toString() ?? `Unknown error`;
+                }
+                
+                const isSyntaxError = this.isSyntaxError(msg);
+                if (!isSyntaxError) {
+                    this.persistQueryToHistory(query, null, msg);
+                }
+                
+                this.snackbar.errorPersistent(`Error: ${msg}\n`
+                    + `Caused: Failed to execute query.`);
+            },
+            error: () => {
+                this.driver.connection$.pipe(first()).subscribe((connection) => {
+                    if (connection && connection.url.includes(`localhost`)) {
+                        this.snackbar.errorPersistent(`Unable to connect to TypeDB server.\n`
+                            + `Ensure the server is still running.`);
+                    } else {
+                        this.snackbar.errorPersistent(`Unable to connect to TypeDB server.\n`
+                            + `Check your network connection and ensure the server is still running.`);
+                    }
+                });
+            }
+        });
+    }
+
+    private isSyntaxError(errorMessage: string): boolean {
+        const syntaxErrorPatterns = [
+            /syntax error/i,
+            /parse error/i,
+            /unexpected token/i,
+            /expected .+ but got/i,
+            /invalid query/i,
+        ];
+        return syntaxErrorPatterns.some(pattern => pattern.test(errorMessage));
+    }
+
+    private persistQueryToHistory(query: string, res: ApiResponse<QueryResponse> | null, errorMessage?: string): void {
+        const db = this.driver.database$.value;
+        const connection = this.driver.connection$.value;
+        const durationMs = this.currentQueryStartTime ? Date.now() - this.currentQueryStartTime : undefined;
+
+        let resultSummary: QueryResultSummary | undefined;
+
+        if (res && !isApiErrorResponse(res)) {
+            const rowCount = this.getRowCount(res);
+            const sampleRows = this.getSampleRows(res);
+            const { sampleRows: truncatedRows, truncated } = truncateResults(sampleRows, MAX_SAMPLE_ROWS);
+            
+            resultSummary = {
+                status: "success",
+                rowCount,
+                sampleRows: truncatedRows,
+                truncated,
+                durationMs,
+            };
+        } else if (errorMessage) {
+            resultSummary = {
+                status: "error",
+                rowCount: 0,
+                sampleRows: [],
+                truncated: false,
+                errorMessage,
+                durationMs,
+            };
+        }
+
+        this.appData.queryHistory.addEntry({
+            dbId: db?.name ?? null,
+            connectionUrl: connection?.url ?? null,
+            queryText: query,
+            executedAt: new Date().toISOString(),
+            status: resultSummary?.status ?? "error",
+            resultSummary,
+        });
+
+        if (db?.name) {
+            this.appData.queryHistory.setLastQueryForDb(db.name, query);
+        }
+
+        if (resultSummary) {
+            this.updateSavedQueryLastRun(resultSummary);
+        }
+    }
+
+    private getRowCount(res: ApiResponse<QueryResponse>): number {
+        if (isApiErrorResponse(res)) return 0;
+        switch (res.ok.answerType) {
+            case "ok":
+                return 0;
+            case "conceptRows":
+            case "conceptDocuments":
+                return res.ok.answers.length;
+            default:
+                return 0;
+        }
+    }
+
+    private getSampleRows(res: ApiResponse<QueryResponse>): unknown[] {
+        if (isApiErrorResponse(res)) return [];
+        switch (res.ok.answerType) {
+            case "ok":
+                return [];
+            case "conceptRows":
+                return res.ok.answers.map(row => {
+                    const simplified: Record<string, string> = {};
+                    for (const [key, concept] of Object.entries(row.data)) {
+                        simplified[key] = this.conceptToSimpleString(concept);
+                    }
+                    return simplified;
+                });
+            case "conceptDocuments":
+                return res.ok.answers;
+            default:
+                return [];
+        }
+    }
+
+    private conceptToSimpleString(concept: Concept | undefined): string {
+        if (!concept) return "";
+        switch (concept.kind) {
+            case "entityType":
+            case "relationType":
+            case "roleType":
+            case "attributeType":
+                return concept.label;
+            case "entity":
+            case "relation":
+                return `iid:${concept.iid}`;
+            case "attribute":
+            case "value":
+                return String(concept.value);
+            default:
+                return "";
+        }
+    }
+
+    loadSavedQuery(savedQueryId: string, queryText: string): void {
+        this._currentSavedQueryId$.next(savedQueryId);
+        this._originalQueryText$.next(queryText);
+        this.queryTypeControl.patchValue("code");
+        this.queryEditorControl.patchValue(queryText);
+    }
+
+    clearCurrentSavedQuery(): void {
+        this._currentSavedQueryId$.next(null);
+        this._originalQueryText$.next("");
+    }
+
+    getCurrentSavedQueryId(): string | null {
+        return this._currentSavedQueryId$.value;
+    }
+
+    saveCurrentQueryChanges(): boolean {
+        const currentId = this._currentSavedQueryId$.value;
+        if (!currentId) return false;
+        const newText = this.queryEditorControl.value;
+        this.appData.savedQueries.updateQuery(currentId, { queryText: newText });
+        this._originalQueryText$.next(newText);
+        return true;
+    }
+
+    private updateSavedQueryLastRun(resultSummary: QueryResultSummary): void {
+        const currentId = this._currentSavedQueryId$.value;
+        if (currentId) {
+            this.appData.savedQueries.updateQueryLastRun(currentId, resultSummary);
+        }
     }
 
     clearChat() {
