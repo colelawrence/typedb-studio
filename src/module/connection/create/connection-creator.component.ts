@@ -28,7 +28,7 @@ import { FormActionsComponent, FormComponent, FormInputComponent, FormOption, Fo
 
 const connectionUrlValidator: ValidatorFn = (control: AbstractControl<string>) => {
     if (parseConnectionUrlOrNull(control.value)) return null;
-    else return { errorText: `Format: typedb://username:password@address` };
+    else return { errorText: `Unrecognized format` };
 };
 
 const addressValidator: ValidatorFn = (control: AbstractControl<string>) => {
@@ -194,5 +194,22 @@ export class ConnectionCreatorComponent {
         if (this.savedConnections.some(x => x.name === control.value)) {
             return { errorText: `A connection named '${control.value}' already exists` };
         } else return null;
+    }
+
+    onAdvancedFieldPaste(event: ClipboardEvent) {
+        const pastedText = event.clipboardData?.getData('text')?.trim();
+        if (!pastedText) return;
+        
+        const parsed = parseConnectionUrlOrNull(pastedText);
+        if (!parsed) return;
+        
+        event.preventDefault();
+        
+        this.advancedForm.patchValue({
+            address: isBasicParams(parsed) ? parsed.addresses[0] : parsed.translatedAddresses[0].external,
+            username: parsed.username,
+            password: parsed.password,
+        });
+        this.advancedForm.markAsDirty();
     }
 }

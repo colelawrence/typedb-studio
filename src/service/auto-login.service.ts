@@ -78,4 +78,26 @@ export class AutoLoginService {
         const base64urlRegex = /^[A-Za-z0-9_-]+$/;
         return parts.every(part => part.length > 0 && base64urlRegex.test(part));
     }
+
+    /**
+     * Decodes a JWT token and extracts the username from the 'sub' claim.
+     * Returns null if decoding fails or 'sub' claim is missing.
+     */
+    decodeUsernameFromToken(token: string): string | null {
+        try {
+            const parts = token.split(".");
+            if (parts.length !== 3) return null;
+
+            // Decode the payload (second part) from base64url
+            const payload = parts[1];
+            // Convert base64url to base64
+            const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+            const jsonPayload = atob(base64);
+            const decoded = JSON.parse(jsonPayload);
+
+            return decoded.sub ?? null;
+        } catch {
+            return null;
+        }
+    }
 }

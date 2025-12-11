@@ -184,6 +184,20 @@ export class DriverState {
             const maybeTryDisconnect$ = this._status$.value === "connected" ? this.tryDisconnect(lockId) : of({});
             return maybeTryDisconnect$.pipe(
                 tap(() => {
+                    // Decode username from JWT for display purposes
+                    const username = this.decodeUsernameFromToken(params.token) ?? "user";
+                    // Create a connection config for display (token connections don't persist)
+                    const config = new ConnectionConfig({
+                        name: params.name,
+                        params: {
+                            username,
+                            password: "", // Not used for token-based auth
+                            addresses: [params.address],
+                            database: params.database,
+                        },
+                        preferences: { isStartupConnection: false },
+                    });
+                    this.connection$.next(config);
                     this._status$.next("connecting");
                     this.driver = new TypeDBHttpDriverWithToken({
                         token: params.token,
@@ -487,6 +501,21 @@ export class DriverState {
         const [body, suffix] = raw.split(`-`) as [string, string?];
         const [major, minor, patch] = body.split(`.`).map(x => parseInt(x));
         return { major, minor, patch, suffix };
+    }
+
+    /** Decodes a JWT token and extracts the username from the 'sub' claim. */
+    private decodeUsernameFromToken(token: string): string | null {
+        try {
+            const parts = token.split(".");
+            if (parts.length !== 3) return null;
+            const payload = parts[1];
+            const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+            const jsonPayload = atob(base64);
+            const decoded = JSON.parse(jsonPayload);
+            return decoded.sub ?? null;
+        } catch {
+            return null;
+        }
     }
 
     sendStopSignal() {

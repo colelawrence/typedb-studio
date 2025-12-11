@@ -11,7 +11,7 @@
           <div class="help-input-row">
             <mat-form-field>
               <mat-label>Address</mat-label>
-              <input matInput [formControl]="advancedForm.controls.address" autocomplete="url">
+              <input matInput [formControl]="advancedForm.controls.address" autocomplete="url" (paste)="onAdvancedFieldPaste($event)">
               <div class="tp-password-input-suffix" matSuffix>
                 <div class="regenerate-id-button" type="button">
                   <i class="help-tooltip-button fa-light fa-circle-question" richTooltip [richTooltipContent]="addressHelpTooltipContent"></i>
@@ -22,11 +22,17 @@
               }
             </mat-form-field>
           </div>
-          <tp-form-input [form]="advancedForm" field="username" label="Username"/>
+          <mat-form-field>
+              <mat-label>Username</mat-label>
+              <input matInput [formControl]="advancedForm.controls.username" (paste)="onAdvancedFieldPaste($event)">
+              @if (advancedForm.controls.username.getError("errorText")) {
+                <mat-error>{{ advancedForm.controls.username.getError("errorText") }}</mat-error>
+              }
+            </mat-form-field>
           <div class="help-input-row">
             <mat-form-field>
               <mat-label>Password</mat-label>
-              <input matInput [formControl]="advancedForm.controls.password" [type]="passwordRevealed ? 'text' : 'password'">
+              <input matInput [formControl]="advancedForm.controls.password" [type]="passwordRevealed ? 'text' : 'password'" (paste)="onAdvancedFieldPaste($event)">
               <div class="tp-password-input-suffix" matSuffix>
                 <button type="button" tabindex="-1" mat-icon-button (click)="passwordRevealed = !passwordRevealed" aria-label="Hide password" aria-pressed="hide">
                   <i [class]="passwordRevealed ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'"></i>
@@ -44,7 +50,10 @@
       </div>
     } @else {
       <div class="form-input-block">
-        <div class="form-input-row-description"><p>Enter connection URL</p></div>
+        <div class="form-input-row-description">
+          <p>Enter connection URL</p>
+          <p class="form-input-row-hint">Format: <code>typedb://username:password&#64;address</code><br/>Example: <code>typedb://admin:password&#64;http://localhost:8000</code></p>
+        </div>
         <div class="help-input-row">
           <mat-form-field>
             <input matInput [formControl]="form.controls.url" [type]="connectionUrlRevealed ? 'text' : 'password'" [placeholder]="connectionUrlPlaceholder">

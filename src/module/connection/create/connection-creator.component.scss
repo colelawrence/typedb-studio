@@ -5,9 +5,7 @@
  */
 
 @use "colors";
-
 @use "shapes";
-@use "typography";
 @use "@angular/material" as mat;
 
 tp-form,
@@ -68,6 +66,16 @@ tp-form,
 
 .form-input-row-description {
     margin: 0 0 12px;
+
+    .form-input-row-hint {
+        margin-top: 4px;
+        font-size: 14px;
+        color: colors.$secondary-light-grey;
+
+        code {
+            font-family: "Monaco", monospace;
+        }
+    }
 }
 
 tp-form.form {
