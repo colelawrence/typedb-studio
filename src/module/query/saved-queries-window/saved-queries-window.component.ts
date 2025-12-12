@@ -512,7 +512,8 @@ export class SavedQueriesWindowComponent {
     }
 
     moveItem(node: SavedQueryTreeNode): void {
-        const folders = this.appData.savedQueries.listFolders();
+        const folders = this.appData.savedQueries.listFolders()
+            .filter(f => !f.importKey && f.id !== URL_IMPORTS_FOLDER_ID);
         const dialogRef = this.dialog.open(MoveDialogComponent, {
             width: "400px",
             data: {
@@ -526,15 +527,22 @@ export class SavedQueriesWindowComponent {
         });
 
         dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
-            if (result?.action === "move") {
+            if (result?.action === "move" || result?.action === "create-folder-and-move") {
+                let targetFolderId = result.targetFolderId;
+
+                if (result.action === "create-folder-and-move" && result.newFolderName) {
+                    const newFolder = this.appData.savedQueries.createFolder(result.newFolderName, null);
+                    targetFolderId = newFolder.id;
+                }
+
                 if (node.type === "query") {
-                    this.appData.savedQueries.updateQuery(node.id, { folderId: result.targetFolderId });
+                    this.appData.savedQueries.updateQuery(node.id, { folderId: targetFolderId });
                 } else if (node.type === "folder") {
-                    this.appData.savedQueries.updateFolder(node.id, { parentId: result.targetFolderId });
+                    this.appData.savedQueries.updateFolder(node.id, { parentId: targetFolderId });
                 }
                 this.refreshTree();
-                if (result.targetFolderId) {
-                    this.expandedNodes.add(result.targetFolderId);
+                if (targetFolderId) {
+                    this.expandedNodes.add(targetFolderId);
                 } else {
                     this.expandedNodes.add(UNSORTED_FOLDER_ID);
                 }
@@ -604,12 +612,20 @@ export class SavedQueriesWindowComponent {
         });
 
         dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
-            if (result?.action === "move") {
+            if (result?.action === "move" || result?.action === "create-folder-and-move") {
+                let targetFolderId = result.targetFolderId;
+
+                if (result.action === "create-folder-and-move" && result.newFolderName) {
+                    const newFolder = this.appData.savedQueries.createFolder(result.newFolderName, null);
+                    targetFolderId = newFolder.id;
+                    this.expandedNodes.add(newFolder.id);
+                }
+
                 this.appData.savedQueries.createQuery({
                     name: query.name,
                     queryText: query.queryText,
                     description: query.description,
-                    folderId: result.targetFolderId,
+                    folderId: targetFolderId,
                 });
                 this.refreshTree();
                 this.snackbar.success(`Query "${query.name}" saved to your queries`);
@@ -717,8 +733,16 @@ export class SavedQueriesWindowComponent {
         });
 
         dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
-            if (result?.action === "move") {
-                this.appData.saveAllSharedQueries(result.targetFolderId);
+            if (result?.action === "move" || result?.action === "create-folder-and-move") {
+                let targetFolderId = result.targetFolderId;
+
+                if (result.action === "create-folder-and-move" && result.newFolderName) {
+                    const newFolder = this.appData.savedQueries.createFolder(result.newFolderName, null);
+                    targetFolderId = newFolder.id;
+                    this.expandedNodes.add(newFolder.id);
+                }
+
+                this.appData.saveAllSharedQueries(targetFolderId);
                 this.refreshTree();
                 this.snackbar.success('All shared queries saved to your queries');
             }
@@ -740,8 +764,16 @@ export class SavedQueriesWindowComponent {
         });
 
         dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
-            if (result?.action === "move") {
-                const savedQuery = this.appData.saveSharedQueryToMyQueries(query.id, result.targetFolderId);
+            if (result?.action === "move" || result?.action === "create-folder-and-move") {
+                let targetFolderId = result.targetFolderId;
+
+                if (result.action === "create-folder-and-move" && result.newFolderName) {
+                    const newFolder = this.appData.savedQueries.createFolder(result.newFolderName, null);
+                    targetFolderId = newFolder.id;
+                    this.expandedNodes.add(newFolder.id);
+                }
+
+                const savedQuery = this.appData.saveSharedQueryToMyQueries(query.id, targetFolderId);
                 if (savedQuery) {
                     this.refreshTree();
                     this.snackbar.success(`Query "${query.name}" saved to your queries`);
@@ -765,8 +797,16 @@ export class SavedQueriesWindowComponent {
         });
 
         dialogRef.afterClosed().subscribe((result: MoveDialogResult | undefined) => {
-            if (result?.action === "move") {
-                this.appData.saveSharedFolderToMyQueries(folder.id, result.targetFolderId);
+            if (result?.action === "move" || result?.action === "create-folder-and-move") {
+                let targetFolderId = result.targetFolderId;
+
+                if (result.action === "create-folder-and-move" && result.newFolderName) {
+                    const newFolder = this.appData.savedQueries.createFolder(result.newFolderName, null);
+                    targetFolderId = newFolder.id;
+                    this.expandedNodes.add(newFolder.id);
+                }
+
+                this.appData.saveSharedFolderToMyQueries(folder.id, targetFolderId);
                 this.refreshTree();
                 this.snackbar.success(`Folder "${folder.name}" saved to your queries`);
             }
