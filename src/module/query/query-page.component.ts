@@ -173,17 +173,27 @@ export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
             return;
         }
 
+        const folders = this.appData.savedQueries.listFolders().filter(f => !f.importKey);
+        const defaultName = this.extractDefaultQueryName(queryText);
         const dialogRef = this.dialog.open(SavedQueryDialogComponent, {
             width: "500px",
-            data: { mode: "create", queryText } as SavedQueryDialogData,
+            data: { mode: "create", queryText, folders, folderId: null, name: defaultName } as SavedQueryDialogData,
         });
 
         dialogRef.afterClosed().subscribe((result: SavedQueryDialogResult | undefined) => {
             if (result?.action === "save") {
+                let folderId = result.folderId ?? null;
+
+                if (result.newFolderName) {
+                    const newFolder = this.appData.savedQueries.createFolder(result.newFolderName, null);
+                    folderId = newFolder.id;
+                }
+
                 this.appData.savedQueries.createQuery({
                     name: result.name,
                     queryText,
                     description: result.description,
+                    folderId,
                 });
                 this.snackbar.success(`Query "${result.name}" saved`);
                 this.querySidebar?.refreshSavedQueries();
@@ -210,6 +220,34 @@ export class QueryPageComponent implements OnInit, AfterViewInit, OnDestroy {
         } else {
             this.state.clearToScratch();
         }
+    }
+
+    private extractDefaultQueryName(queryText: string): string {
+        const maxLength = 60;
+        const lines = queryText.split('\n');
+        const parts: string[] = [];
+        let totalLength = 0;
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) {
+                continue;
+            }
+            const separator = parts.length > 0 ? ' ' : '';
+            if (totalLength + separator.length + trimmed.length > maxLength) {
+                const remaining = maxLength - totalLength - separator.length;
+                if (remaining > 10) {
+                    parts.push(trimmed.slice(0, remaining) + '…');
+                } else if (parts.length > 0) {
+                    parts[parts.length - 1] = parts[parts.length - 1].replace(/[;,]?$/, '…');
+                }
+                break;
+            }
+            parts.push(trimmed);
+            totalLength += separator.length + trimmed.length;
+        }
+
+        return parts.join(' ');
     }
 
     readonly JSON = JSON;
